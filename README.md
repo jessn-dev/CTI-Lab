@@ -50,6 +50,7 @@ malware   : VirusTotal  MALWARE DETECTED 65/74
 5. [Install & run](#install)
 6. [Verifying it worked](#verify)
 6b. [AI Threat Analyst (Phase A)](#analyst)
+6c. [Attack it yourself (manual)](#attack)
 7. [Project layout](#layout)
 8. [Scope, honesty & limitations](#limits)
 9. [Troubleshooting](#troubleshooting)
@@ -242,6 +243,48 @@ default `gemini-2.0-flash`). Local/Claude backends are **deliberately deferred**
 see [`docs/ROADMAP.md`](docs/ROADMAP.md). A local model (Ollama) would remove the
 third-party egress entirely.
 
+<a name="attack"></a>
+## 6c. Attack it yourself (manual)
+
+`./attack.sh` automates the kill chain, but the honeypot is a real `sshd` — you
+can attack it by hand and watch Wazuh react. Open the dashboard first
+(`https://localhost:8443` → **Threat Hunting → Security Alerts**).
+
+### Local, from this machine
+```bash
+# 1) Foothold, then run the kill chain by hand
+ssh root@localhost -p 2222            # password: toor
+#   inside the honeypot:
+cat /etc/shadow                                   # credential dump (T1003)
+useradd -m sysadmin_bckp                          # persistence → FIM alert
+curl -s -o /tmp/evil.txt https://secure.eicar.org/eicar.com.txt  # FIM → VirusTotal
+echo "" > /var/log/auth.log                       # log wipe (T1070)
+
+# 2) Brute force (trigger rule 5763 + the Active-Response ban)
+for i in $(seq 1 10); do ssh -o StrictHostKeyChecking=no root@localhost -p 2222; done
+#   type a wrong password each time
+```
+
+> ⚠️ From this machine your source IP is the **Docker gateway** (`192.168.65.1`),
+> shared by all host→container traffic. Once the ban fires, **new** SSH
+> connections are dropped for 600s (auto-unban), but an **already-open** session
+> survives. So log in with `toor` first, then brute-force in a second terminal.
+
+### From another machine — a "clean" external attacker IP
+To make Wazuh see a real, distinct attacker IP (and ban only that host), attack
+from a **different device on your LAN**:
+```bash
+# find your Mac's LAN IP
+ipconfig getifaddr en0            # e.g. 192.168.1.42
+
+# from the other machine, target that IP:2222
+ssh root@192.168.1.42 -p 2222                     # foothold (password: toor)
+for i in $(seq 1 10); do ssh -o StrictHostKeyChecking=no root@192.168.1.42 -p 2222; done
+```
+Now the brute-force `srcip` is the other machine's real address, Active Response
+bans **only** that IP, and your Mac keeps working. (Ensure macOS firewall allows
+inbound `2222`, and both devices are on the same network.)
+
 <a name="layout"></a>
 ## 7. Project layout
 
@@ -282,8 +325,9 @@ real:
 - **The "attacker" IP is the Docker gateway.** Because the red-team script runs
   on the same host, Wazuh sees the container/host gateway as `srcip`. The ban is
   real but self-inflicted, so Active Response uses a **600s timeout auto-unban**
-  and the honeypot keeps its outbound path to the manager. Point the script at
-  the honeypot from a *different* host to see a "clean" external ban.
+  and the honeypot keeps its outbound path to the manager. To get a "clean"
+  external attacker IP, attack from a different LAN machine — see
+  [§6c Attack it yourself](#attack).
 - **Windows/RDP honeypot was removed.** The original `dockur/windows` image
   needs KVM, which isn't available under Docker Desktop on macOS. On a Linux/KVM
   host you can re-add it as a second honeypot service and enroll a Windows agent.

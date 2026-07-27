@@ -20,7 +20,7 @@ an Active-Response IP ban and a VirusTotal malware lookup.
 
 Everything runs in Docker on a single host — no cloud account, no separate VMs.
 
-📚 **API reference & developer portal:** [`docs/`](docs/index.html) — deployed to **GitHub Pages** (Settings → Pages → *Deploy from branch* → `main` / `/docs`).
+📚 **[API reference & developer portal →](https://jessn-dev.github.io/CTI-Lab/)** — the full Stripe-style docs site (auth, endpoints, cURL/Python/JS snippets, error maps), deployed via **GitHub Pages** from `/docs`.
 
 ## Demo
 
@@ -42,7 +42,7 @@ malware   : VirusTotal  MALWARE DETECTED 65/74
 ---
 
 ## Table of Contents
-0. [Demo](#demo) · [API reference portal](docs/index.html)
+0. [Demo](#demo) · [API reference portal ↗](https://jessn-dev.github.io/CTI-Lab/)
 1. [What it does](#what)
 2. [Architecture](#architecture)
 3. [The attack → detect → respond flow](#flow)
@@ -182,7 +182,7 @@ Tear down with `./stop_lab.sh` (add `--wipe` to also delete the data volumes).
 | Wazuh indexer (OpenSearch API) | `curl -k -u admin:SecretPassword https://localhost:9200` | 9200 | `admin` / `SecretPassword` |
 | Wazuh manager API | `curl -k -u wazuh-wui:'MyS3cr37P450r.*-' https://localhost:55000` | 55000 | `wazuh-wui` / `MyS3cr37P450r.*-` |
 | SSH honeypot | `ssh root@localhost -p 2222` | 2222 | password `toor` |
-| Portfolio site | open `docs/index.html` | — | — |
+| API docs portal | [jessn-dev.github.io/CTI-Lab](https://jessn-dev.github.io/CTI-Lab/) | — | — |
 | Threat reports (Phase A) | `reports/threat_report_<timestamp>.md` | — | — |
 
 **Internal ports** (agent traffic, not for humans): `1514/tcp` agent→manager,

@@ -1,0 +1,398 @@
+/* ==========================================================================
+   CTI Lab — Developer Portal  (Stripe / Twilio-inspired)
+   Three columns: sticky nav · prose · sticky code panel.
+   ========================================================================== */
+
+:root {
+    /* Stripe-ish palette with a security cyan accent */
+    --navy:      #0a2540;
+    --slate:     #3c4257;
+    --muted:     #697386;
+    --faint:     #8792a2;
+    --accent:    #635bff;   /* indigo (primary) */
+    --accent-2:  #06b6d4;   /* cyan (security)  */
+    --success:   #0e9f6e;
+    --danger:    #e5484d;
+    --bg:        #ffffff;
+    --bg-alt:    #fbfbfd;
+    --bg-tint:   #f6f9fc;
+    --border:    #e6e8eb;
+    --border-soft:#eef0f3;
+
+    /* code panel */
+    --code-bg:   #0b1020;
+    --code-head: #121834;
+    --code-line: #1e2748;
+    --code-fg:   #c7d0e6;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: var(--slate);
+    background: var(--bg);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overflow-x: hidden;
+}
+
+/* ---- 3-column shell -------------------------------------------------------- */
+.layout {
+    display: grid;
+    grid-template-columns: 272px minmax(0, 1fr) 560px;
+    height: 100vh;
+}
+
+/* ---- Sidebar --------------------------------------------------------------- */
+.sidebar {
+    background: var(--bg-alt);
+    border-right: 1px solid var(--border);
+    padding: 2rem 1.25rem;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+}
+
+.logo {
+    font-size: 1.05rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin-bottom: 2rem;
+    color: var(--navy);
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+.logo svg { color: var(--accent); }
+
+.nav-links { list-style: none; display: flex; flex-direction: column; gap: 0.15rem; }
+
+.section-title {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--faint);
+    font-weight: 700;
+    margin: 1.5rem 0 0.5rem;
+}
+.section-title:first-child { margin-top: 0; }
+
+.nav-links li a {
+    display: block;
+    text-decoration: none;
+    color: var(--muted);
+    font-size: 0.875rem;
+    font-weight: 500;
+    padding: 0.4rem 0.7rem;
+    border-radius: 7px;
+    border-left: 2px solid transparent;
+    transition: all 0.15s ease;
+}
+.nav-links li a:hover { color: var(--navy); background: var(--bg-tint); }
+.nav-links li.active a {
+    color: var(--accent);
+    background: #f0f0ff;
+    border-left-color: var(--accent);
+    font-weight: 600;
+}
+
+.sidebar-foot {
+    margin-top: auto;
+    padding-top: 1.5rem;
+    font-size: 0.75rem;
+    color: var(--faint);
+    border-top: 1px solid var(--border-soft);
+}
+.sidebar-foot a { color: var(--accent); text-decoration: none; font-weight: 600; }
+
+/* ---- Main content (Twilio typography) ------------------------------------- */
+.content {
+    padding: 3.5rem 3.5rem 6rem;
+    overflow-y: auto;
+    line-height: 1.7;
+}
+.content > section { max-width: 760px; scroll-margin-top: 2rem; }
+
+.eyebrow {
+    display: inline-block;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 0.9rem;
+}
+
+h1 {
+    font-size: 2.6rem;
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.035em;
+    color: var(--navy);
+    margin-bottom: 1.1rem;
+}
+h2 {
+    font-size: 1.45rem;
+    font-weight: 650;
+    letter-spacing: -0.02em;
+    color: var(--navy);
+    margin: 3.5rem 0 1rem;
+    padding-bottom: 0.6rem;
+    border-bottom: 1px solid var(--border);
+}
+h3 { font-size: 1.05rem; font-weight: 650; color: var(--navy); margin: 2rem 0 0.6rem; }
+
+p { margin-bottom: 1.15rem; color: var(--slate); font-size: 1rem; }
+.lead { font-size: 1.28rem; line-height: 1.55; color: #52586b; font-weight: 400; margin-bottom: 1.6rem; }
+strong { color: var(--navy); font-weight: 650; }
+a.inline { color: var(--accent); text-decoration: none; font-weight: 600; }
+a.inline:hover { text-decoration: underline; }
+
+ul { margin: 0 0 1.2rem; padding-left: 1.3rem; color: var(--slate); }
+li { margin-bottom: 0.45rem; }
+code.tick {
+    font-family: 'Fira Code', monospace;
+    font-size: 0.82em;
+    background: var(--bg-tint);
+    border: 1px solid var(--border-soft);
+    color: #d6336c;
+    padding: 0.12em 0.4em;
+    border-radius: 5px;
+}
+
+/* ---- Badges / pills -------------------------------------------------------- */
+.badges { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 2rem; }
+.badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.32rem 0.7rem;
+    border-radius: 999px;
+    background: var(--bg-tint);
+    border: 1px solid var(--border);
+    color: var(--slate);
+}
+.badge .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent-2); }
+
+/* ---- Quickstart command ---------------------------------------------------- */
+.cmd {
+    background: var(--code-bg);
+    border-radius: 10px;
+    padding: 1rem 1.2rem;
+    font-family: 'Fira Code', monospace;
+    font-size: 0.85rem;
+    color: #e7ecf7;
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    margin: 0.5rem 0 1rem;
+    overflow-x: auto;
+}
+.cmd::before { content: "$"; color: var(--accent-2); font-weight: 700; }
+
+/* ---- Callouts -------------------------------------------------------------- */
+.callout {
+    display: flex;
+    gap: 0.85rem;
+    padding: 1rem 1.25rem;
+    border-radius: 10px;
+    margin: 1.5rem 0;
+    font-size: 0.92rem;
+    line-height: 1.6;
+    border: 1px solid transparent;
+}
+.callout .ic { flex: 0 0 auto; font-size: 1.05rem; line-height: 1.5; }
+.callout.info    { background: #f0f6ff; border-color: #d6e4ff; color: #1e40af; }
+.callout.ok      { background: #eefbf4; border-color: #cdeede; color: #0f7a52; }
+.callout.warn    { background: #fff8ec; border-color: #ffe6b8; color: #92610b; }
+.callout strong  { color: inherit; }
+
+/* ---- Data tables ----------------------------------------------------------- */
+.table-wrap { overflow-x: auto; margin: 1.25rem 0 1.75rem; border: 1px solid var(--border); border-radius: 10px; }
+table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+thead th {
+    text-align: left;
+    background: var(--bg-tint);
+    color: var(--muted);
+    font-weight: 650;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.7rem 1rem;
+    border-bottom: 1px solid var(--border);
+}
+tbody td { padding: 0.7rem 1rem; border-bottom: 1px solid var(--border-soft); color: var(--slate); vertical-align: top; }
+tbody tr:last-child td { border-bottom: none; }
+tbody td:first-child { font-weight: 600; color: var(--navy); }
+td .mono { font-family: 'Fira Code', monospace; font-size: 0.82em; color: var(--accent); }
+
+/* ---- Result grid ----------------------------------------------------------- */
+.result-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin: 1.5rem 0; }
+.result-card {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.1rem;
+    background: linear-gradient(180deg, #ffffff, var(--bg-alt));
+}
+.result-card .k { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.result-card .v { font-size: 1.5rem; font-weight: 700; color: var(--navy); margin: 0.35rem 0 0.1rem; letter-spacing: -0.02em; }
+.result-card .s { font-size: 0.8rem; color: var(--success); font-weight: 600; }
+
+/* ==== Code panel (Stripe style, sticky) ==================================== */
+.code-panel {
+    background: var(--code-bg);
+    display: flex;
+    flex-direction: column;
+    border-left: 1px solid var(--code-line);
+    position: sticky;
+    top: 0;
+    height: 100vh;
+}
+.code-header { background: var(--code-head); padding: 1.1rem 1.5rem 0; border-bottom: 1px solid var(--code-line); }
+.code-header .panel-label { font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: #6b7699; margin-bottom: 0.9rem; font-weight: 700; }
+.tabs { display: flex; gap: 1.25rem; flex-wrap: wrap; }
+.tab {
+    background: transparent; border: none;
+    color: #7c88ad; font-size: 0.8rem; font-family: 'Fira Code', monospace;
+    cursor: pointer; padding-bottom: 0.75rem;
+    border-bottom: 2px solid transparent; transition: color 0.15s;
+}
+.tab:hover { color: #b9c2de; }
+.tab.active { color: #7dd3fc; border-bottom-color: #7dd3fc; }
+
+.code-content { padding: 1.6rem 1.75rem; overflow-y: auto; flex: 1; }
+.code-content .filepath { font-family: 'Fira Code', monospace; font-size: 0.72rem; color: #5b688f; margin-bottom: 0.8rem; display: flex; align-items: center; gap: .5rem; }
+.code-block { position: relative; }
+.copy-btn {
+    position: absolute; top: 0; right: 0;
+    background: #1c274c; color: #9fb0dd; border: 1px solid var(--code-line);
+    border-radius: 6px; font-size: 0.68rem; padding: 0.25rem 0.55rem; cursor: pointer;
+    font-family: 'Inter', sans-serif; transition: all 0.15s;
+}
+.copy-btn:hover { background: #26325e; color: #fff; }
+.copy-btn.copied { color: #6ee7b7; border-color: #2f6b52; }
+
+pre { white-space: pre; overflow-x: auto; color: var(--code-fg); font-family: 'Fira Code', monospace; font-size: 0.8rem; line-height: 1.65; }
+.hidden { display: none; }
+
+/* syntax */
+.kw { color: #ff8b7d; }
+.str { color: #a5d6ff; }
+.func { color: #d2a8ff; }
+.num { color: #f0b866; }
+.comment { color: #6b7699; font-style: italic; }
+.builtin { color: #7dd3fc; }
+
+/* terminal */
+.terminal-output {
+    margin-top: 1.5rem;
+    background: #05070f;
+    padding: 1.25rem 1.25rem 1rem;
+    border-radius: 8px;
+    border: 1px solid var(--code-line);
+    color: #9fb0cd;
+    font-family: 'Fira Code', monospace;
+    font-size: 0.76rem;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    position: relative;
+}
+.terminal-output::before {
+    content: "● ● ●";
+    position: absolute; top: 0.55rem; left: 0.9rem;
+    font-size: 0.55rem; color: #2c3557; letter-spacing: 0.2em;
+}
+.terminal-output { padding-top: 1.9rem; }
+.t-ok  { color: #6ee7b7; }
+.t-hit { color: #fca5a5; }
+.t-dim { color: #5b688f; }
+
+/* ---- Responsive: collapse to a single readable column --------------------- */
+@media (max-width: 1180px) {
+    .layout { grid-template-columns: 240px minmax(0, 1fr); height: 100vh; }
+    .code-panel { display: none; }
+}
+@media (max-width: 760px) {
+    .layout { grid-template-columns: 1fr; height: auto; }
+    .sidebar { display: none; }
+    .content { padding: 2rem 1.25rem 4rem; height: auto; overflow: visible; }
+    h1 { font-size: 2rem; }
+    .result-grid { grid-template-columns: 1fr; }
+}
+
+/* ==========================================================================
+   API portal components (getting-started steps, endpoints, snippets, errors)
+   ========================================================================== */
+
+/* Getting-started steps */
+.step { display: flex; gap: 1rem; margin: 1.25rem 0; }
+.step-n {
+    flex: 0 0 auto; width: 28px; height: 28px; border-radius: 50%;
+    background: var(--accent); color: #fff; font-weight: 700; font-size: 0.85rem;
+    display: flex; align-items: center; justify-content: center; margin-top: 0.15rem;
+}
+.step-body { flex: 1; min-width: 0; }
+.step-body h3 { margin: 0.1rem 0 0.4rem; }
+.step-body .cmd { margin-top: 0.5rem; }
+.cmd br { content: ""; }
+
+/* Endpoint header: METHOD + path */
+.endpoint {
+    display: flex; align-items: center; gap: 0.75rem;
+    background: var(--bg-tint); border: 1px solid var(--border);
+    border-radius: 10px; padding: 0.7rem 1rem; margin: 0.5rem 0 1rem;
+    overflow-x: auto;
+}
+.method {
+    flex: 0 0 auto; font-family: 'Fira Code', monospace; font-weight: 700;
+    font-size: 0.72rem; letter-spacing: 0.03em; padding: 0.28rem 0.6rem;
+    border-radius: 6px; color: #fff;
+}
+.method.get  { background: #0e9f6e; }
+.method.post { background: var(--accent); }
+.method.put  { background: #d97706; }
+.method.del  { background: var(--danger); }
+.path { font-family: 'Fira Code', monospace; font-size: 0.9rem; color: var(--navy); font-weight: 600; white-space: nowrap; }
+
+/* Response / schema code blocks in the light content column */
+pre.resp {
+    background: #0b1020; color: var(--code-fg);
+    border-radius: 10px; padding: 1rem 1.1rem; margin: 0.5rem 0 1.25rem;
+    overflow-x: auto; font-family: 'Fira Code', monospace; font-size: 0.8rem; line-height: 1.6;
+    white-space: pre;
+}
+p.tip { font-size: 0.88rem; color: var(--muted); margin-top: -0.5rem; }
+p.tip code.tick { color: #d6336c; }
+
+/* Status-code pills in the error table */
+.code-pill {
+    display: inline-block; font-family: 'Fira Code', monospace; font-weight: 700;
+    font-size: 0.78rem; padding: 0.15rem 0.5rem; border-radius: 6px;
+}
+.code-pill.ok   { background: #eefbf4; color: #0f7a52; }
+.code-pill.warn { background: #fff8ec; color: #92610b; }
+.code-pill.err  { background: #fdecee; color: #c02d38; }
+
+/* Language groups in the code panel — toggled by switchLang() */
+.lang { display: block; }
+.lang.hidden { display: none; }
+
+/* Demo / visuals block */
+.demo-shot {
+    border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
+    margin: 1.25rem 0 1.5rem; background: var(--bg-alt);
+}
+.demo-shot img { display: block; width: 100%; height: auto; }
+.demo-shot .cap {
+    padding: 0.7rem 1rem; font-size: 0.82rem; color: var(--muted);
+    border-top: 1px solid var(--border-soft);
+}
+
+/* Shields.io badge row (hero) */
+.shields { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0 0 1.75rem; }
+.shields img { height: 20px; }

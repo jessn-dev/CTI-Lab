@@ -1,0 +1,29 @@
+# Python Virtual Environments
+venv/
+env/
+.venv/
+*.pyc
+__pycache__/
+
+# Secrets & Configs
+.env
+secrets.json
+
+# IDE & OS Files
+.vscode/
+.idea/
+.DS_Store
+
+# Docker & Local Data Volumes
+windows_data/
+logs/
+*.log
+
+# Generated Wazuh TLS certificates (created by generate-certs.yml)
+config/wazuh_indexer_ssl_certs/
+
+# AI threat reports (may contain attacker IOCs)
+reports/
+
+# Reference material pulled during setup
+_ref/

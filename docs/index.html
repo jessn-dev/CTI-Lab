@@ -1,0 +1,407 @@
+gi<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CTI Lab · API Reference</title>
+    <meta name="description" content="Developer portal for the Threat Intelligence Lab — authenticate and query the Wazuh SIEM REST API and the alert indexer.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="layout">
+
+    <!-- ============ SIDEBAR ============ -->
+    <nav class="sidebar">
+        <div class="logo">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+            CTI&nbsp;Lab&nbsp;API
+        </div>
+        <ul class="nav-links">
+            <li class="section-title">Start Here</li>
+            <li class="active"><a href="#overview">Overview</a></li>
+            <li><a href="#getting-started">Getting Started</a></li>
+            <li><a href="#authentication">Authentication</a></li>
+
+            <li class="section-title">API Reference</li>
+            <li><a href="#base-urls">Base URLs</a></li>
+            <li><a href="#ep-auth">POST&nbsp;·&nbsp;Authenticate</a></li>
+            <li><a href="#ep-info">GET&nbsp;·&nbsp;API Info</a></li>
+            <li><a href="#ep-agents">GET&nbsp;·&nbsp;Agents</a></li>
+            <li><a href="#ep-status">GET&nbsp;·&nbsp;Manager Status</a></li>
+            <li><a href="#ep-ar">PUT&nbsp;·&nbsp;Active Response</a></li>
+            <li><a href="#ep-search">POST&nbsp;·&nbsp;Search Alerts</a></li>
+
+            <li class="section-title">Reference</li>
+            <li><a href="#errors">Error Handling</a></li>
+        </ul>
+        <div class="sidebar-foot">
+            Wazuh API v4.8.0<br>
+            <a href="https://github.com/" target="_blank" rel="noopener">View source →</a>
+        </div>
+    </nav>
+
+    <!-- ============ CONTENT ============ -->
+    <main class="content">
+
+        <section id="overview">
+            <span class="eyebrow">Cybersecurity Portfolio Project</span>
+            <h1>Threat Intelligence Lab</h1>
+            <p class="lead">A Dockerised Wazuh SIEM with an SSH honeypot, a real adversary simulation, and Python SOAR automation — this portal documents the REST APIs it exposes and how to drive them.</p>
+
+            <p class="shields">
+                <img src="https://img.shields.io/badge/SIEM-Wazuh_4.8-000000?logo=wazuh" alt="Wazuh 4.8">
+                <img src="https://img.shields.io/badge/Env-Docker-2496ED?logo=docker" alt="Docker">
+                <img src="https://img.shields.io/badge/Language-Python_3-3776AB?logo=python" alt="Python 3">
+                <img src="https://img.shields.io/badge/Framework-MITRE_ATT%26CK-C22D40" alt="MITRE ATT&CK">
+                <img src="https://img.shields.io/badge/API-REST_·_JWT-635bff" alt="REST JWT">
+                <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT">
+            </p>
+
+            <div class="demo-shot">
+                <div class="terminal-output" style="margin:0;border:none;border-radius:0;">$ ./attack.sh
+<span class="t-dim">| PHASE 2: Delivery &amp; Initial Access — T1110</span>
+<span class="t-ok">[+] CREDENTIALS CRACKED -&gt; root:toor. Foothold HELD.</span>
+<span class="t-dim">| PHASE 5: Command &amp; Control — T1105</span>
+<span class="t-ok">[+] Payload dropped -&gt; /tmp/eicar.com.txt</span>
+
+<span class="t-dim"># Wazuh reacts automatically:</span>
+detection : rule 5763  <span class="t-hit">sshd brute force (level 10)</span>
+response  : <span class="t-hit">BANNED 192.168.65.1</span> (iptables DROP)
+malware   : VirusTotal <span class="t-hit">MALWARE DETECTED 65/74</span></div>
+                <div class="cap">▶︎ The attack → detect → respond chain, live. Drop a dashboard screen-recording at <code class="tick">docs/assets/demo.gif</code> to embed it here.</div>
+            </div>
+        </section>
+
+        <section id="getting-started">
+            <h2>Getting started (5 minutes)</h2>
+            <p>Three steps to your first successful API call. The code panel on the right has copy-paste snippets in cURL, Python, and JavaScript for every call below.</p>
+
+            <div class="step">
+                <div class="step-n">1</div>
+                <div class="step-body">
+                    <h3>Bring the lab up</h3>
+                    <p>Starts the Wazuh SIEM + honeypot and waits for the agent to connect. The Manager API comes up on <code class="tick">:55000</code>, the Indexer on <code class="tick">:9200</code>.</p>
+                    <div class="cmd">cp .env.example .env &amp;&amp; ./start_lab.sh</div>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-n">2</div>
+                <div class="step-body">
+                    <h3>Get an auth token</h3>
+                    <p>Exchange your API credentials (HTTP Basic) for a short-lived JWT. See <a class="inline" href="#authentication">Authentication</a> for the full flow.</p>
+                    <div class="cmd">curl -k -u wazuh-wui:'MyS3cr37P450r.*-' \<br>&nbsp;&nbsp;"https://localhost:55000/security/user/authenticate?raw=true"</div>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-n">3</div>
+                <div class="step-body">
+                    <h3>Make your first call</h3>
+                    <p>List enrolled agents. You should see the honeypot (<code class="tick">linux-honeypot</code>, id <code class="tick">001</code>) with status <code class="tick">active</code>.</p>
+                    <div class="cmd">curl -k -H "Authorization: Bearer $TOKEN" \<br>&nbsp;&nbsp;"https://localhost:55000/agents?pretty=true"</div>
+                </div>
+            </div>
+
+            <div class="callout ok">
+                <span class="ic">✓</span>
+                <div><strong>That's it.</strong> A <code class="tick">200</code> with <code class="tick">"error": 0</code> and your agent in <code class="tick">data.affected_items</code> means you're wired up. From here, query alerts or trigger an active response.</div>
+            </div>
+        </section>
+
+        <section id="authentication">
+            <h2>Authentication</h2>
+            <p>The Manager API uses <strong>JWT Bearer tokens</strong>. You authenticate once with HTTP Basic credentials, receive a token, then send that token on every subsequent request. Tokens expire after ~15 minutes — re-authenticate when you get a <code class="tick">401</code>.</p>
+
+            <h3>1 · Acquire credentials</h3>
+            <p>Credentials are lab defaults, set in <code class="tick">docker-compose.yml</code> (and overridable via <code class="tick">.env</code>). Two separate services, two credential sets:</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Service</th><th>Base URL</th><th>Username</th><th>Password</th></tr></thead>
+                <tbody>
+                    <tr><td>Manager API</td><td><span class="mono">https://localhost:55000</span></td><td><span class="mono">wazuh-wui</span></td><td><span class="mono">MyS3cr37P450r.*-</span></td></tr>
+                    <tr><td>Indexer API</td><td><span class="mono">https://localhost:9200</span></td><td><span class="mono">admin</span></td><td><span class="mono">SecretPassword</span></td></tr>
+                    <tr><td>Dashboard (UI)</td><td><span class="mono">https://localhost:8443</span></td><td><span class="mono">admin</span></td><td><span class="mono">SecretPassword</span></td></tr>
+                </tbody>
+            </table>
+            </div>
+            <div class="callout warn">
+                <span class="ic">◆</span>
+                <div>All endpoints use <strong>self-signed TLS</strong>. Pass <code class="tick">-k</code> (curl), <code class="tick">verify=False</code> (Python), or <code class="tick">rejectUnauthorized:false</code> (Node) in the lab. Never disable verification against production.</div>
+            </div>
+
+            <h3>2 · Exchange for a token</h3>
+            <p><code class="tick">GET /security/user/authenticate</code> with Basic auth returns a JWT. Add <code class="tick">?raw=true</code> to get the bare token string (handy for shell variables); omit it for the JSON envelope <code class="tick">{ "data": { "token": "…" } }</code>.</p>
+
+            <h3>3 · Use the token</h3>
+            <p>Send it as <code class="tick">Authorization: Bearer &lt;token&gt;</code> on every Manager API request. The Indexer API uses plain HTTP Basic on each call (no token step).</p>
+        </section>
+
+        <section id="base-urls">
+            <h2>Base URLs</h2>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>API</th><th>Base URL</th><th>Auth</th><th>Purpose</th></tr></thead>
+                <tbody>
+                    <tr><td>Manager</td><td><span class="mono">https://localhost:55000</span></td><td>JWT Bearer</td><td>Agents, status, active response</td></tr>
+                    <tr><td>Indexer</td><td><span class="mono">https://localhost:9200</span></td><td>HTTP Basic</td><td>Query / aggregate alerts (OpenSearch)</td></tr>
+                </tbody>
+            </table>
+            </div>
+        </section>
+
+        <section id="ep-auth">
+            <div class="endpoint"><span class="method post">GET</span><span class="path">/security/user/authenticate</span></div>
+            <p>Exchange HTTP Basic credentials for a JWT. <strong>Manager API.</strong></p>
+            <h3>Query parameters</h3>
+            <div class="table-wrap"><table>
+                <thead><tr><th>Param</th><th>Type</th><th>Req.</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td><span class="mono">raw</span></td><td>boolean</td><td>no</td><td><code class="tick">true</code> returns the bare token string instead of the JSON envelope.</td></tr>
+                </tbody>
+            </table></div>
+            <h3>Response <span class="mono">200</span></h3>
+            <pre class="resp"><code>{ "data": { "token": "eyJhbGciOiJF…" }, "error": 0 }</code></pre>
+        </section>
+
+        <section id="ep-info">
+            <div class="endpoint"><span class="method get">GET</span><span class="path">/</span></div>
+            <p>API metadata — version, revision, hostname. Good first authenticated call to confirm your token works. <strong>Manager API.</strong></p>
+            <h3>Response <span class="mono">200</span></h3>
+            <pre class="resp"><code>{
+  "data": {
+    "title": "Wazuh API REST",
+    "api_version": "4.8.0",
+    "revision": 40812,
+    "hostname": "wazuh.manager",
+    "timestamp": "2026-07-27T19:22:15Z"
+  },
+  "error": 0
+}</code></pre>
+        </section>
+
+        <section id="ep-agents">
+            <div class="endpoint"><span class="method get">GET</span><span class="path">/agents</span></div>
+            <p>List enrolled agents and their status. <strong>Manager API.</strong></p>
+            <h3>Query parameters</h3>
+            <div class="table-wrap"><table>
+                <thead><tr><th>Param</th><th>Type</th><th>Req.</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td><span class="mono">agents_list</span></td><td>string[]</td><td>no</td><td>Comma-separated agent IDs to filter (e.g. <code class="tick">001</code>).</td></tr>
+                    <tr><td><span class="mono">status</span></td><td>string</td><td>no</td><td>Filter by <code class="tick">active</code>, <code class="tick">disconnected</code>, <code class="tick">pending</code>, <code class="tick">never_connected</code>.</td></tr>
+                    <tr><td><span class="mono">limit</span></td><td>integer</td><td>no</td><td>Max items to return (default 500).</td></tr>
+                    <tr><td><span class="mono">offset</span></td><td>integer</td><td>no</td><td>Pagination offset.</td></tr>
+                    <tr><td><span class="mono">pretty</span></td><td>boolean</td><td>no</td><td>Pretty-print the JSON response.</td></tr>
+                </tbody>
+            </table></div>
+            <h3>Response <span class="mono">200</span></h3>
+            <pre class="resp"><code>{
+  "data": {
+    "affected_items": [
+      { "id": "001", "name": "linux-honeypot",
+        "ip": "172.19.0.4", "status": "active",
+        "version": "Wazuh v4.8.0", "node_name": "node01" }
+    ],
+    "total_affected_items": 2,
+    "failed_items": []
+  },
+  "error": 0
+}</code></pre>
+        </section>
+
+        <section id="ep-status">
+            <div class="endpoint"><span class="method get">GET</span><span class="path">/manager/status</span></div>
+            <p>State of each Wazuh daemon (<code class="tick">running</code> / <code class="tick">stopped</code>). Use it as a health check. <strong>Manager API.</strong></p>
+            <h3>Response <span class="mono">200</span></h3>
+            <pre class="resp"><code>{
+  "data": { "affected_items": [{
+    "wazuh-analysisd": "running",
+    "wazuh-authd": "running",
+    "wazuh-remoted": "running",
+    "wazuh-execd": "running"
+  }] },
+  "error": 0
+}</code></pre>
+        </section>
+
+        <section id="ep-ar">
+            <div class="endpoint"><span class="method put">PUT</span><span class="path">/active-response</span></div>
+            <p>Trigger an active-response command on one or more agents — the API equivalent of the automatic ban the SIEM performs on a brute force. <strong>Manager API.</strong></p>
+            <h3>Query / body parameters</h3>
+            <div class="table-wrap"><table>
+                <thead><tr><th>Param</th><th>Type</th><th>Req.</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td><span class="mono">agents_list</span></td><td>string[]</td><td>no</td><td>Target agent IDs. Omit / <code class="tick">*</code> for all.</td></tr>
+                    <tr><td><span class="mono">command</span></td><td>string</td><td>yes</td><td>Registered AR command, e.g. <code class="tick">active-defense0</code> or <code class="tick">firewall-drop0</code>.</td></tr>
+                    <tr><td><span class="mono">arguments</span></td><td>string[]</td><td>no</td><td>Extra args passed to the AR script.</td></tr>
+                </tbody>
+            </table></div>
+            <h3>Response <span class="mono">200</span></h3>
+            <pre class="resp"><code>{ "data": { "affected_items": ["001"],
+    "total_affected_items": 1 }, "error": 0 }</code></pre>
+        </section>
+
+        <section id="ep-search">
+            <div class="endpoint"><span class="method post">POST</span><span class="path">/wazuh-alerts-*/_search</span></div>
+            <p>Query and aggregate alerts with the OpenSearch Query DSL. <strong>Indexer API</strong> (<span class="mono">:9200</span>, HTTP Basic). Example below aggregates the top attacker source IPs.</p>
+            <h3>Request body</h3>
+            <pre class="resp"><code>{ "size": 0,
+  "aggs": { "ips": { "terms": {
+    "field": "data.srcip", "size": 5 } } } }</code></pre>
+            <h3>Response <span class="mono">200</span> (aggregation)</h3>
+            <pre class="resp"><code>{ "aggregations": { "ips": { "buckets": [
+    { "key": "192.168.65.1", "doc_count": 36 }
+] } } }</code></pre>
+            <p class="tip">Related: <code class="tick">GET /_cat/indices/wazuh-alerts*?v</code> lists the alert indices and document counts.</p>
+        </section>
+
+        <section id="errors">
+            <h2>Error handling</h2>
+            <p>All errors return a JSON body and a matching HTTP status. The Manager API uses two shapes: a simple <code class="tick">{ "title", "detail" }</code> for auth/routing failures, and the operation envelope <code class="tick">{ "error", "data": { "failed_items": [...] } }</code> for partial failures.</p>
+
+            <h3>Status code map</h3>
+            <div class="table-wrap"><table>
+                <thead><tr><th>Code</th><th>Meaning</th><th>Cause &amp; fix</th></tr></thead>
+                <tbody>
+                    <tr><td><span class="code-pill ok">200</span></td><td>OK</td><td>Success. Still check <code class="tick">"error": 0</code> and an empty <code class="tick">failed_items</code>.</td></tr>
+                    <tr><td><span class="code-pill warn">400</span></td><td>Bad Request</td><td>Malformed param/body. Check types and required fields.</td></tr>
+                    <tr><td><span class="code-pill err">401</span></td><td>Unauthorized</td><td>Missing/expired token or wrong Basic creds. Re-authenticate.</td></tr>
+                    <tr><td><span class="code-pill err">403</span></td><td>Forbidden</td><td>Token valid but the RBAC role lacks the resource. </td></tr>
+                    <tr><td><span class="code-pill err">404</span></td><td>Not Found</td><td>Unknown endpoint or agent ID. Check the path / <code class="tick">agents_list</code>.</td></tr>
+                    <tr><td><span class="code-pill warn">405</span></td><td>Method Not Allowed</td><td>Wrong verb for the path (e.g. POST where GET is expected).</td></tr>
+                    <tr><td><span class="code-pill warn">429</span></td><td>Too Many Requests</td><td>API rate limit hit. Back off and retry.</td></tr>
+                    <tr><td><span class="code-pill err">500</span></td><td>Server Error</td><td>Daemon issue — check <code class="tick">GET /manager/status</code> and container logs.</td></tr>
+                </tbody>
+            </table></div>
+
+            <h3>Error schemas</h3>
+            <pre class="resp"><code><span class="comment"># 401 — auth / routing failure</span>
+{ "title": "Unauthorized",
+  "detail": "No authorization token provided" }
+
+<span class="comment"># operation with a partial failure (HTTP 200, error != 0)</span>
+{ "data": { "affected_items": [],
+    "failed_items": [ { "error": { "code": 1701,
+        "message": "Agent does not exist" },
+      "id": ["999"] } ] },
+  "error": 1 }</code></pre>
+
+            <h3>Troubleshooting</h3>
+            <div class="table-wrap"><table>
+                <thead><tr><th>Symptom</th><th>Fix</th></tr></thead>
+                <tbody>
+                    <tr><td><span class="mono">curl: (7) Failed to connect … 55000</span></td><td>Lab isn't up — run <code class="tick">./start_lab.sh</code> and wait for the manager.</td></tr>
+                    <tr><td><span class="mono">SSL certificate problem</span></td><td>Self-signed TLS — add <code class="tick">-k</code> / <code class="tick">verify=False</code> / <code class="tick">rejectUnauthorized:false</code>.</td></tr>
+                    <tr><td><span class="mono">401 "Token expired"</span></td><td>Tokens live ~15 min — re-run the authenticate call and reuse the new token.</td></tr>
+                    <tr><td><span class="mono">error: 1701 "Agent does not exist"</span></td><td>Bad agent ID in <code class="tick">agents_list</code>; list valid IDs with <code class="tick">GET /agents</code>.</td></tr>
+                </tbody>
+            </table></div>
+        </section>
+    </main>
+
+    <!-- ============ CODE PANEL ============ -->
+    <aside class="code-panel">
+        <div class="code-header">
+            <div class="panel-label">Code Snippets</div>
+            <div class="tabs" role="tablist">
+                <button class="tab active" role="tab" onclick="switchLang('curl', event)">cURL</button>
+                <button class="tab" role="tab" onclick="switchLang('python', event)">Python</button>
+                <button class="tab" role="tab" onclick="switchLang('js', event)">JavaScript</button>
+            </div>
+        </div>
+        <div class="code-content">
+
+            <!-- cURL -->
+            <div class="lang lang-curl">
+                <div class="filepath">1 · Authenticate → token</div>
+                <div class="code-block"><button class="copy-btn">Copy</button><pre><code><span class="builtin">TOKEN</span>=$(curl -sk -u wazuh-wui:<span class="str">'MyS3cr37P450r.*-'</span> \
+  <span class="str">"https://localhost:55000/security/user/authenticate?raw=true"</span>)</code></pre></div>
+
+                <div class="filepath">2 · List agents</div>
+                <div class="code-block"><button class="copy-btn">Copy</button><pre><code>curl -sk -H <span class="str">"Authorization: Bearer $TOKEN"</span> \
+  <span class="str">"https://localhost:55000/agents?pretty=true"</span></code></pre></div>
+
+                <div class="filepath">3 · Query top attacker IPs (indexer)</div>
+                <div class="code-block"><button class="copy-btn">Copy</button><pre><code>curl -sk -u admin:SecretPassword \
+  <span class="str">"https://localhost:9200/wazuh-alerts-*/_search"</span> \
+  -H <span class="str">'Content-Type: application/json'</span> -d <span class="str">'{
+    "size": 0,
+    "aggs": { "ips": { "terms":
+      { "field": "data.srcip", "size": 5 } } } }'</span></code></pre></div>
+
+                <div class="filepath">4 · Trigger active response</div>
+                <div class="code-block"><button class="copy-btn">Copy</button><pre><code>curl -sk -X PUT -H <span class="str">"Authorization: Bearer $TOKEN"</span> \
+  -H <span class="str">'Content-Type: application/json'</span> \
+  <span class="str">"https://localhost:55000/active-response?agents_list=001"</span> \
+  -d <span class="str">'{ "command": "firewall-drop0" }'</span></code></pre></div>
+            </div>
+
+            <!-- Python -->
+            <div class="lang lang-python hidden">
+                <div class="filepath">requests · self-signed TLS → verify=False</div>
+                <div class="code-block"><button class="copy-btn">Copy</button><pre><code><span class="kw">import</span> requests
+requests.packages.urllib3.disable_warnings()
+BASE = <span class="str">"https://localhost:55000"</span>
+
+<span class="comment"># 1 · authenticate → token</span>
+tok = requests.<span class="func">get</span>(<span class="str">f"{BASE}/security/user/authenticate"</span>,
+    auth=(<span class="str">"wazuh-wui"</span>, <span class="str">"MyS3cr37P450r.*-"</span>),
+    params={<span class="str">"raw"</span>: <span class="str">"true"</span>}, verify=<span class="kw">False</span>).text
+hdr = {<span class="str">"Authorization"</span>: <span class="str">f"Bearer {tok}"</span>}
+
+<span class="comment"># 2 · list agents</span>
+agents = requests.<span class="func">get</span>(<span class="str">f"{BASE}/agents"</span>, headers=hdr,
+    verify=<span class="kw">False</span>).<span class="func">json</span>()
+<span class="kw">for</span> a <span class="kw">in</span> agents[<span class="str">"data"</span>][<span class="str">"affected_items"</span>]:
+    <span class="func">print</span>(a[<span class="str">"id"</span>], a[<span class="str">"name"</span>], a[<span class="str">"status"</span>])
+
+<span class="comment"># 3 · query top attacker IPs (indexer)</span>
+q = {<span class="str">"size"</span>: <span class="num">0</span>, <span class="str">"aggs"</span>: {<span class="str">"ips"</span>: {<span class="str">"terms"</span>:
+    {<span class="str">"field"</span>: <span class="str">"data.srcip"</span>, <span class="str">"size"</span>: <span class="num">5</span>}}}}
+r = requests.<span class="func">post</span>(<span class="str">"https://localhost:9200/wazuh-alerts-*/_search"</span>,
+    auth=(<span class="str">"admin"</span>, <span class="str">"SecretPassword"</span>), json=q, verify=<span class="kw">False</span>)
+<span class="func">print</span>(r.<span class="func">json</span>()[<span class="str">"aggregations"</span>][<span class="str">"ips"</span>][<span class="str">"buckets"</span>])</code></pre></div>
+            </div>
+
+            <!-- JavaScript -->
+            <div class="lang lang-js hidden">
+                <div class="filepath">Node 18+ · fetch · self-signed → NODE_TLS_REJECT_UNAUTHORIZED</div>
+                <div class="code-block"><button class="copy-btn">Copy</button><pre><code><span class="comment">// lab only: accept the self-signed cert</span>
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = <span class="str">"0"</span>;
+<span class="kw">const</span> BASE = <span class="str">"https://localhost:55000"</span>;
+
+<span class="comment">// 1 · authenticate → token</span>
+<span class="kw">const</span> basic = Buffer.<span class="func">from</span>(<span class="str">"wazuh-wui:MyS3cr37P450r.*-"</span>).<span class="func">toString</span>(<span class="str">"base64"</span>);
+<span class="kw">const</span> token = <span class="kw">await</span> (<span class="kw">await</span> <span class="func">fetch</span>(
+  <span class="str">`${BASE}/security/user/authenticate?raw=true`</span>,
+  { headers: { Authorization: <span class="str">`Basic ${basic}`</span> } })).<span class="func">text</span>();
+
+<span class="comment">// 2 · list agents</span>
+<span class="kw">const</span> res = <span class="kw">await</span> <span class="func">fetch</span>(<span class="str">`${BASE}/agents`</span>,
+  { headers: { Authorization: <span class="str">`Bearer ${token}`</span> } });
+<span class="kw">const</span> { data } = <span class="kw">await</span> res.<span class="func">json</span>();
+data.affected_items.<span class="func">forEach</span>(a =&gt;
+  console.<span class="func">log</span>(a.id, a.name, a.status));
+
+<span class="comment">// 3 · query top attacker IPs (indexer)</span>
+<span class="kw">const</span> idxAuth = Buffer.<span class="func">from</span>(<span class="str">"admin:SecretPassword"</span>).<span class="func">toString</span>(<span class="str">"base64"</span>);
+<span class="kw">const</span> hits = <span class="kw">await</span> (<span class="kw">await</span> <span class="func">fetch</span>(
+  <span class="str">"https://localhost:9200/wazuh-alerts-*/_search"</span>, {
+    method: <span class="str">"POST"</span>,
+    headers: { Authorization: <span class="str">`Basic ${idxAuth}`</span>,
+      <span class="str">"Content-Type"</span>: <span class="str">"application/json"</span> },
+    body: JSON.<span class="func">stringify</span>({ size: <span class="num">0</span>, aggs: { ips: {
+      terms: { field: <span class="str">"data.srcip"</span>, size: <span class="num">5</span> } } } })
+  })).<span class="func">json</span>();
+console.<span class="func">log</span>(hits.aggregations.ips.buckets);</code></pre></div>
+            </div>
+
+        </div>
+    </aside>
+</div>
+<script src="script.js"></script>
+</body>
+</html>

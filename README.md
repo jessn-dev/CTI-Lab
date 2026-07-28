@@ -217,9 +217,14 @@ The lab includes a purpose-built **"CTI · Threat Overview"** dashboard — top
 attacker IPs, alert-level distribution, MITRE ATT&CK techniques, alerts over
 time, top rules, and a total-alert metric. Its saved objects live in
 `config/wazuh_dashboard/cti-dashboard.ndjson` and import automatically on
-startup (or run `./import-dashboard.sh`). Open it via the dashboard's ☰ menu →
-**Dashboards → CTI · Threat Overview**. Build your own panels in the UI and
-re-export the NDJSON to version them.
+startup (or run `./import-dashboard.sh`).
+
+It's also set as the **default landing page** — after you log in you go straight
+to it (via `uiSettings.overrides.defaultRoute` in
+`config/wazuh_dashboard/opensearch_dashboards.yml`). To reach the stock Wazuh
+overview instead, use the ☰ menu → Wazuh; to revert, set `defaultRoute` back to
+`/app/wz-home`. Build your own panels in the UI and re-export the NDJSON to
+version them.
 
 ### Prefer the terminal? Use `logs.sh`
 
@@ -264,8 +269,9 @@ Output lands in `reports/threat_report_<timestamp>.md`.
   exponential backoff (`GEMINI_MAX_RETRIES`). You can't accidentally blow the cap.
 
 **Backend:** Gemini only for now (`LLM_PROVIDER=gemini`, model `GEMINI_MODEL`,
-default `gemini-2.0-flash`). Local/Claude backends are **deliberately deferred** —
-see [`docs/ROADMAP.md`](docs/ROADMAP.md). A local model (Ollama) would remove the
+default `gemini-2.5-flash` — it has its own free-tier daily quota; `gemini-2.0-flash`
+exhausts quickly). Local/Claude backends are **deliberately deferred** — see
+[`docs/ROADMAP.md`](docs/ROADMAP.md). A local model (Ollama) would remove the
 third-party egress entirely.
 
 <a name="attack"></a>

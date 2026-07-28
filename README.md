@@ -392,6 +392,23 @@ real:
   host you can re-add it as a second honeypot service and enroll a Windows agent.
 - **EICAR, not live malware.** The dropped payload is the harmless EICAR test
   string — enough to exercise FIM + VirusTotal without handling real malware.
+- **Vulnerability Detection is disabled on purpose.** The Wazuh 4.8 engine
+  downloads a large CVE feed from Wazuh's CTI service and correlates it against
+  agent package inventories. It's the heaviest module, and under amd64 emulation
+  on Apple Silicon the feed download truncates and fails to parse
+  (`Error updating feed: parse error …`), leaving the *"Vulnerabilities by year
+  of publication"* panels empty. It's also outside this lab's scope (honeypot →
+  SIEM detection → SOAR response), so it's turned off in
+  `config/wazuh_cluster/wazuh_manager.conf` (`<enabled>no</enabled>`).
+
+  **This is an emulation limitation, not a design flaw.** On a **dedicated
+  homelab — native x86_64 Linux** (a mini-PC, an Intel/AMD server, or a Proxmox
+  VM), there's no Rosetta/QEMU layer, the Wazuh images run natively, and the CVE
+  feed downloads and parses cleanly. Flip `<enabled>yes</enabled>`, give it a few
+  minutes to sync, and the *"Vulnerabilities by year of publication"* panels
+  populate from the honeypot's package inventory. The lab is fully portable
+  there — same `./start_lab.sh`, and you can also re-add the Windows/RDP honeypot
+  since KVM is available.
 - **Credentials are lab defaults** (`admin/SecretPassword`, `root/toor`,
   `wazuh-wui/...`). Never expose this stack to an untrusted network.
 
@@ -407,6 +424,7 @@ real:
 | Port 8443/2222 already in use | Another service holds the port — change the host side of the mapping in `docker-compose.yml` (e.g. `9443:5601`). |
 | `platform (linux/amd64) does not match ... arm64` | Expected on Apple Silicon — Wazuh publishes amd64 only. `platform: linux/amd64` is pinned, so it runs under emulation. Enable Rosetta in Docker Desktop (Settings → General) and give Docker ≥ 8 GB for the indexer. |
 | Indexer container keeps restarting on Apple Silicon | OpenSearch under emulation is memory-hungry — raise Docker Desktop's RAM, and confirm `vm.max_map_count` was set (`start_lab.sh` does this). |
+| "Vulnerabilities by year of publication" panel is empty | **By design** — Vulnerability Detection is disabled (the CVE feed is huge and fails to sync under emulation, and it's out of scope). See §8. Re-enable in `wazuh_manager.conf` if you want it. |
 
 ### Active Response — gotchas worth knowing
 

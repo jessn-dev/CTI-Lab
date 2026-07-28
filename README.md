@@ -52,6 +52,7 @@ malware   : VirusTotal  MALWARE DETECTED 65/74
 6b. [AI Threat Analyst (Phase A)](#analyst)
 6c. [Attack it yourself (manual)](#attack)
 7. [Project layout](#layout)
+7b. [Scripts reference](#scripts)
 8. [Scope, honesty & limitations](#limits)
 9. [Troubleshooting](#troubleshooting)
 
@@ -210,6 +211,30 @@ Confirm the honeypot agent is connected:
 docker exec -it wazuh.manager /var/ossec/bin/agent_control -l
 ```
 
+### Custom dashboard (shipped as code)
+
+The lab includes a purpose-built **"CTI · Threat Overview"** dashboard — top
+attacker IPs, alert-level distribution, MITRE ATT&CK techniques, alerts over
+time, top rules, and a total-alert metric. Its saved objects live in
+`config/wazuh_dashboard/cti-dashboard.ndjson` and import automatically on
+startup (or run `./import-dashboard.sh`). Open it via the dashboard's ☰ menu →
+**Dashboards → CTI · Threat Overview**. Build your own panels in the UI and
+re-export the NDJSON to version them.
+
+### Prefer the terminal? Use `logs.sh`
+
+The dashboard is optional — everything is in log files + the indexer. `logs.sh`
+tails them for you, no paths to remember:
+
+```bash
+./logs.sh          # live alert stream (human-readable)
+./logs.sh json     # live alerts: level | rule | srcip | description  (!! = level ≥ 10)
+./logs.sh ar       # Active-Response bans
+./logs.sh vt       # VirusTotal integration
+./logs.sh auth     # honeypot raw SSH auth.log
+./logs.sh agents   # enrolled agents + status
+```
+
 <a name="analyst"></a>
 ## 6b. AI Threat Analyst (Phase A)
 
@@ -294,6 +319,8 @@ generate-certs.yml            # one-shot Wazuh TLS cert generator
 start_lab.sh                  # bring the lab up, wait for the agent (no auto-attack)
 attack.sh                     # run the adversary simulation on demand
 report.sh                     # generate the AI threat report
+logs.sh                       # view the SIEM from a terminal (no dashboard)
+import-dashboard.sh           # load the custom "CTI · Threat Overview" dashboard
 stop_lab.sh                   # tear down (--wipe clears volumes)
 requirements.txt / .env.example
 honeypot/
@@ -301,6 +328,7 @@ honeypot/
   entrypoint.sh               # enroll agent, start rsyslog + sshd
   agent-fim.conf              # realtime FIM on /tmp, /home, /root
 config/
+  wazuh_dashboard/cti-dashboard.ndjson  # custom dashboard (saved objects, as code)
   wazuh_cluster/wazuh_manager.conf   # + custom Active Response & VT integration
   wazuh_indexer/  wazuh_dashboard/   # official single-node config
   certs.yml                          # cert generator inventory
@@ -312,6 +340,37 @@ scripts/
 reports/                      # generated threat reports (gitignored)
 docs/                         # static portfolio site
 ```
+
+<a name="scripts"></a>
+## 7b. Scripts reference
+
+Every script has a full docstring/header explaining its internals; this is the
+quick map of what each one does and when to run it.
+
+### Lifecycle (repo root)
+| Script | What it does | When |
+|--------|--------------|------|
+| `start_lab.sh` | Generates TLS certs (first run), tunes `vm.max_map_count`, builds the honeypot, brings the stack up, prepares the Python venv, waits for the agent to connect, and best-effort auto-imports the custom dashboard. **Does not attack.** | Once, to boot the lab |
+| `attack.sh` | Runs the paramiko adversary simulation against the honeypot. | On demand, while watching the dashboard |
+| `report.sh` | Runs the offline AI analyst → writes a MITRE ATT&CK report to `reports/`. | After an attack |
+| `logs.sh` | Terminal SIEM viewer — `alerts` / `json` / `ar` / `vt` / `auth` / `agents` modes. | Anytime, instead of the dashboard |
+| `import-dashboard.sh` | Imports the custom **CTI · Threat Overview** saved objects into the dashboard. | Auto-run by `start_lab.sh`; re-run if needed |
+| `stop_lab.sh` | Tears the stack down (`--wipe` also deletes data volumes). | To stop / reset |
+
+### Detection & SOAR logic (`scripts/`)
+| Script | Role | How it works |
+|--------|------|--------------|
+| `simulate_attacks.py` | Red team | `paramiko` over SSH: cracks the weak login and **holds** the session, keeps brute-forcing to trip detection, then runs recon / persistence / EICAR drop / log-wipe — a real 6-phase Cyber Kill Chain. |
+| `active_defense.py` | Active Response | Runs on the honeypot agent when Wazuh fires the brute-force rule. Reads the alert JSON from **stdin (`readline`)**, extracts `srcip`, and **appends** an `iptables` DROP (absolute paths — `execd` has a minimal `PATH`). |
+| `malware_capture.py` | VirusTotal integration | Runs on the manager on a FIM new-file alert. Pulls the **SHA-256 straight from the alert** and queries VirusTotal via stdlib `urllib` (no deps on the manager image). |
+| `threat_report.py` | AI analyst (Phase A) | Offline: reads Wazuh detections, **pseudonymises IOCs before egress**, applies a sliding-window **rate-limit guardrail**, and asks Gemini for a MITRE ATT&CK report. Never in the attack path. |
+
+### Honeypot image (`honeypot/`)
+| File | What it does |
+|------|--------------|
+| `entrypoint.sh` | Installs an `ESTABLISHED,RELATED` accept rule, starts `rsyslog`, pre-creates `/var/log/auth.log`, enrolls the Wazuh agent, then runs `sshd` (no `-e`, so auth logs reach syslog). |
+| `Dockerfile` | Ubuntu + `sshd` (weak `root:toor`, raised `MaxStartups`) + `rsyslog` + baked-in Wazuh agent + the AR script. |
+| `agent-fim.conf` | Appended to the agent config: realtime FIM on `/tmp`,`/home`,`/root`, the `auth.log` source, and the custom AR `<command>`. |
 
 <a name="limits"></a>
 ## 8. Scope, honesty & limitations

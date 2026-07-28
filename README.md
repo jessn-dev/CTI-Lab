@@ -24,20 +24,9 @@ Everything runs in Docker on a single host. No cloud account, no separate VMs.
 
 ## Demo
 
-```text
-$ ./attack.sh
-| PHASE 2: Delivery & Initial Access — T1110
-[+] CREDENTIALS CRACKED -> root:toor. Foothold HELD.
-| PHASE 5: Command & Control — T1105
-[+] Payload dropped -> /tmp/eicar.com.txt
+![One `./attack.sh` run: the honeypot is compromised, and Wazuh detects, bans, and flags it automatically.](docs/assets/attack.gif)
 
-# Wazuh reacts automatically:
-detection : rule 5763   sshd brute force (level 10)
-response  : BANNED 192.168.65.1  (iptables DROP)
-malware   : VirusTotal  MALWARE DETECTED 65/74
-```
-
-> _Add a screen-recording of the Wazuh dashboard at `docs/assets/demo.gif` and embed it here:_ `![Demo](docs/assets/demo.gif)`
+*One `./attack.sh` run, from the real lab: brute-force → foothold → EICAR drop, and Wazuh's automatic response — brute-force detection (rule 5763), an iptables ban, and a VirusTotal verdict.*
 
 ---
 

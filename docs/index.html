@@ -69,17 +69,8 @@
             </p>
 
             <div class="demo-shot">
-                <div class="terminal-output" style="margin:0;border:none;border-radius:0;">$ ./attack.sh
-<span class="t-dim">| PHASE 2: Delivery &amp; Initial Access — T1110</span>
-<span class="t-ok">[+] CREDENTIALS CRACKED -&gt; root:toor. Foothold HELD.</span>
-<span class="t-dim">| PHASE 5: Command &amp; Control — T1105</span>
-<span class="t-ok">[+] Payload dropped -&gt; /tmp/eicar.com.txt</span>
-
-<span class="t-dim"># Wazuh reacts automatically:</span>
-detection : rule 5763  <span class="t-hit">sshd brute force (level 10)</span>
-response  : <span class="t-hit">BANNED 192.168.65.1</span> (iptables DROP)
-malware   : VirusTotal <span class="t-hit">MALWARE DETECTED 65/74</span></div>
-                <div class="cap">▶︎ The attack → detect → respond chain, live. Drop a dashboard screen-recording at <code class="tick">docs/assets/demo.gif</code> to embed it here.</div>
+                <img src="assets/attack.gif" alt="One ./attack.sh run: the honeypot is compromised, and Wazuh detects, bans, and flags it automatically.">
+                <div class="cap">▶︎ One <code class="tick">./attack.sh</code> run from the real lab — brute-force → foothold → EICAR drop, and Wazuh's automatic response (detection, iptables ban, VirusTotal verdict).</div>
             </div>
         </section>
 

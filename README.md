@@ -28,6 +28,10 @@ Everything runs in Docker on a single host. No cloud account, no separate VMs.
 
 *One `./attack.sh` run, from the real lab: brute-force → foothold → EICAR drop, and Wazuh's automatic response — brute-force detection (rule 5763), an iptables ban, and a VirusTotal verdict.*
 
+The custom **CTI · Threat Overview** dashboard after a few runs — top attacker IP, alert levels, MITRE ATT&CK techniques, top rules, and alerts over time:
+
+![CTI · Threat Overview dashboard: total alerts, top attacker IPs, alert-level distribution, MITRE ATT&CK techniques, and alerts over time.](docs/assets/dashboard.jpg)
+
 ---
 
 ## Table of Contents

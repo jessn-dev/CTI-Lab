@@ -75,6 +75,10 @@ done
 
 deactivate
 
+# Best-effort: import the custom "CTI · Threat Overview" dashboard once the
+# dashboard API is ready. Runs in the background so it never blocks startup.
+( ./import-dashboard.sh >/dev/null 2>&1 & ) 2>/dev/null || true
+
 echo ""
 echo "===================================================="
 echo "  ✅ Lab is LIVE and waiting."
@@ -96,6 +100,10 @@ echo "  4. Watch the kill chain appear in real time:"
 echo "       - SSH brute force  (rule 5763, level 10)"
 echo "       - Active Response ban of the attacker IP"
 echo "       - FIM 'new file' on /tmp/eicar.com.txt + VirusTotal verdict"
+echo ""
+echo "  Custom dashboard 'CTI · Threat Overview' auto-imports once the"
+echo "  dashboard is ready (or run ./import-dashboard.sh). Find it under"
+echo "  ☰ menu → Dashboards. Terminal-only? Use ./logs.sh"
 echo ""
 echo "  Generate an AI threat report afterwards:  ./report.sh"
 echo "  Stop everything:                          ./stop_lab.sh"

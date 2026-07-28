@@ -150,33 +150,68 @@ malware   : VirusTotal <span class="t-hit">MALWARE DETECTED 65/74</span></div>
 
             <section id="soar">
                 <h2>Automated Response (SOAR)</h2>
-                <p>When Wazuh detects the adversary simulation, it pipes the JSON alert payload directly into our `active_defense.py` script. The script parses the attacker's IP and executes an immediate firewall block, closing the kill chain.</p>
+                <p>When Wazuh flags the brute-force, it pipes the JSON alert straight into <code class="tick">active_defense.py</code> on the honeypot agent. The script reads the alert from stdin, parses the attacker's <code class="tick">srcip</code>, and drops it with <code class="tick">iptables</code> — closing the kill chain automatically. The ban is <em>appended</em> after an ESTABLISHED-accept rule, so an existing session survives while new connections are blocked. Maps to MITRE D3FEND <strong>D3-NTF</strong>.</p>
+            </section>
+
+            <section id="fim">
+                <h2>Malware Capture (FIM)</h2>
+                <p>File Integrity Monitoring watches the honeypot's drop zones (<code class="tick">/tmp</code>, <code class="tick">/home</code>, <code class="tick">/root</code>) in real time. When a payload lands, the agent computes its SHA-256 and ships it in the alert; <code class="tick">malware_capture.py</code> — a Wazuh integration on the manager — reads that hash and queries the <strong>VirusTotal</strong> API, returning a live verdict (e.g. <em>65/74 engines</em> on the EICAR test file) without the manager ever touching the file.</p>
+            </section>
+
+            <section id="reporting">
+                <h2>Threat Reporting</h2>
+                <p>An offline analyst, <code class="tick">threat_report.py</code>, reads the Wazuh detections and asks an LLM (Gemini) to write a <strong>MITRE ATT&amp;CK</strong> incident report — executive summary, kill-chain timeline, technique table, IOCs, severity, and recommended actions. It runs on the logs (never in the attack path), <strong>pseudonymises IOCs before egress</strong>, and rate-limits itself to stay within the free-tier quota.</p>
             </section>
 
             <section id="future-vision">
-                <h2>Future Vision: AI-Generated Honeypots</h2>
-                <p class="lead">Cybersecurity is entering a new phase where artificial intelligence not only finds threats but learns from them and adjusts in real time. At the heart of this transformation are AI-generated honeypots: advanced digital decoys designed to lure and analyze malicious actors continuously.</p>
-                
-                <h3>Core Architecture</h3>
-                <p><strong>Generative Model Integration (LLMs):</strong> Modern AI honeypots utilize large language models fine-tuned on extensive datasets of network logs, system commands, and attacker behaviors. These models (like OpenAI's GPT or Google's Gemini) are trained to mimic server responses, user interactions, and system outputs with high fidelity.</p>
-                <p><strong>Generative Adversarial Networks (GANs):</strong> Systems employ GANs to generate synthetic network environments, device configurations, and service responses that are indistinguishable from real systems, enabling thousands of unique honeypot instances with minimal manual configuration.</p>
-                <p><strong>Prompt Engineering and Fine-Tuning:</strong> Models are further refined to tailor responses to specific protocols (e.g., SSH, HTTP) and simulate vulnerabilities likely to attract attackers. Fine-tuning customizes the model’s behavior to better suit these highly specific deception applications.</p>
+                <span class="eyebrow">Roadmap</span>
+                <h2>Future: AI-Generated Honeypots</h2>
+                <p class="lead">Cybersecurity is entering a phase where AI doesn't just <em>find</em> threats — it learns from each one and adapts in real time. AI-generated honeypots are advanced decoys that continuously evolve to lure, deceive, and analyse attackers, turning a static trap into an intelligent, self-improving defence.</p>
 
-                <h3>Real-Time Interaction and Adaptation</h3>
-                <p><strong>Command and Response Simulation:</strong> When an attacker interacts with the honeypot (e.g., via SSH using Python's Paramiko), commands route to the AI model which generates contextually appropriate responses instantly, dynamically adjusting its behavior based on evolving tactics.</p>
-                <p><strong>Reinforcement Learning (RL):</strong> The system continuously learns from each interaction. The agent’s policy updates based on the outcomes of each engagement, learning to deceive attackers more effectively over time to prolong engagement and gather intelligence.</p>
-                <p><strong>Dynamic Environment Generation:</strong> The environment state continuously updates based on feedback. The system can introduce new vulnerabilities, alter system configurations, or change the network topology on the fly, ensuring attackers encounter a shifting landscape.</p>
+                <div class="callout info">
+                    <span class="ic">◆</span>
+                    <div><strong>The problem this solves.</strong> Static honeypots (like the Docker-based one this lab ships) eventually get <em>fingerprinted</em> — an attacker notices there's no real filesystem, no legitimate traffic, no human behaviour — and leaves. An AI-driven honeypot instead <em>hallucinates a convincing, ever-changing environment</em>, keeping the attacker engaged and the intelligence flowing.</div>
+                </div>
 
-                <h3>Operational Workflow</h3>
-                <ul style="margin-left: 1.5rem; margin-bottom: 1.5rem; color: #475569;">
-                    <li><strong>Initial Connection & Execution:</strong> Attackers connect via standard protocols. The honeypot forwards commands to the AI model, which generates realistic, context-aware responses (e.g., directory listings).</li>
-                    <li><strong>Interaction Logging & Behavior Analysis:</strong> All metadata is logged. The system analyzes attacker behavior in real time, identifying TTPs and predicting next moves.</li>
-                    <li><strong>Federated Learning:</strong> In distributed deployments, honeypots share anonymized threat intelligence to improve collective defense.</li>
-                    <li><strong>Autonomous Multi-Agent Orchestration:</strong> Autonomous AI agents manage interactions, orchestrate defensive actions, and generate natural language threat reports.</li>
+                <h3>Core architecture</h3>
+                <ul>
+                    <li><strong>Large Language Models (LLMs).</strong> A model fine-tuned on network logs, shell commands, and attacker behaviour generates server responses, command output, and file contents with high fidelity — the "brain" that answers the attacker. LLMs are transformer networks trained on vast text corpora (e.g. GPT, Gemini) that understand context and produce fluent, relevant output.</li>
+                    <li><strong>Generative Adversarial Networks (GANs).</strong> Two networks — a <em>generator</em> and a <em>discriminator</em> — compete until the generator produces synthetic environments, device configs, and service banners indistinguishable from real systems, spinning up thousands of unique honeypot instances with little manual setup.</li>
+                    <li><strong>Prompt engineering &amp; fine-tuning.</strong> Careful prompts and supervised fine-tuning tailor the model to specific protocols (SSH, HTTP, SMTP) and to simulate the exact vulnerabilities most likely to attract attackers.</li>
                 </ul>
 
-                <h3>Technical Advantages</h3>
-                <p>The integration of AI transforms honeypots from simple traps into intelligent defense mechanisms. Benefits include <strong>proactive threat detection</strong>, <strong>enhanced intelligence gathering</strong>, <strong>reduced operational overhead</strong>, and the ability to distinguish genuine threats from benign activity with near-zero false positives.</p>
+                <h3>Real-time interaction &amp; adaptation</h3>
+                <ul>
+                    <li><strong>Command &amp; response simulation.</strong> An SSH command routes to the model, which returns a context-aware response within tight latency limits — powered by optimisations like model pruning, quantisation, and parallel processing so the illusion never lags.</li>
+                    <li><strong>Reinforcement Learning (RL).</strong> The system is an agent in a Markov Decision Process: it observes state (attacker commands, session context), picks an action (a simulated response), and updates its policy from the reward (did the deception hold?). Over many sessions it learns to prolong engagement and extract more intelligence.</li>
+                    <li><strong>Dynamic environment generation.</strong> The simulated network, services, and logs are procedurally generated and mutated on the fly — new vulnerabilities, altered configs, even a changed topology — so the attacker faces a constantly shifting landscape and can't pin down the decoy.</li>
+                </ul>
+
+                <h3>Operational workflow</h3>
+                <ul>
+                    <li><strong>Engagement.</strong> Attacker connects over a standard protocol; the honeypot presents a seemingly vulnerable system and forwards each command to the AI backend for a realistic reply.</li>
+                    <li><strong>Logging &amp; behaviour analysis.</strong> Every command, response, and piece of session metadata is logged; the system identifies TTPs in real time and can predict the next move.</li>
+                    <li><strong>Federated learning.</strong> Distributed honeypots share <em>anonymised</em> threat intelligence, improving collective defence without exposing sensitive data.</li>
+                    <li><strong>Autonomous orchestration.</strong> Multi-agent systems manage the interaction, trigger defensive actions (deny-list updates), and write natural-language threat reports.</li>
+                </ul>
+
+                <div class="callout ok">
+                    <span class="ic">✓</span>
+                    <div><strong>Concrete example — an LLM-backed SSH honeypot.</strong> Attacker connects over SSH → the honeypot shows a normal login → after auth, commands like <code class="tick">ls</code> / <code class="tick">ifconfig</code> are answered by the LLM with realistic output → every interaction is logged, and RL refines the deception over time. A Python SSH wrapper (<code class="tick">paramiko</code>) bridges the attacker to the generative backend.</div>
+                </div>
+
+                <h3>Why it matters</h3>
+                <ul>
+                    <li><strong>Realism &amp; adaptability</strong> — deceives sophisticated adversaries that fingerprint static traps.</li>
+                    <li><strong>Scalability</strong> — automated generation deploys honeypots across many segments and devices.</li>
+                    <li><strong>Lower overhead</strong> — ML removes most manual configuration and maintenance.</li>
+                    <li><strong>Richer intelligence &amp; fewer false positives</strong> — continuous learning surfaces emerging TTPs while filtering benign noise.</li>
+                </ul>
+
+                <div class="callout info">
+                    <span class="ic">◆</span>
+                    <div><strong>This lab is the foundation.</strong> The pieces an AI honeypot needs are already here: a real SSH honeypot, a <code class="tick">paramiko</code> attack harness, a SIEM ingesting every event, and Python SOAR acting on detections. The next step is swapping the static <code class="tick">sshd</code> for an LLM-driven shell that generates responses per command — evolving this from a <em>detection</em> lab into an <em>adaptive-deception</em> one. See <code class="tick">docs/ROADMAP.md</code> for the phased plan.</div>
+                </div>
             </section>
 
         <section id="base-urls">

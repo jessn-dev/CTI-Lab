@@ -62,7 +62,7 @@ move) → federated (anonymised) intel sharing → autonomous multi-agent
 orchestration writing NL threat reports.
 
 **Concrete build path on THIS lab (the foundation is already here):**
-The pieces an AI honeypot needs already exist — a real SSH honeypot, a
+Most of what an AI honeypot needs already exists here: a real SSH honeypot, a
 `paramiko` attack harness, a SIEM ingesting every event, and Python SOAR acting
 on detections. The realistic increments:
 1. **LLM shell** — fork [beelzebub] / [shelLM] and replace the static `sshd` with

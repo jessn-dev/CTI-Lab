@@ -18,7 +18,7 @@ that walks a full Cyber Kill Chain against the honeypot. Real attack traffic
 produces real detections, which trigger two Python **SOAR** automations:
 an Active-Response IP ban and a VirusTotal malware lookup.
 
-Everything runs in Docker on a single host — no cloud account, no separate VMs.
+Everything runs in Docker on a single host. No cloud account, no separate VMs.
 
 📚 **[API reference & developer portal →](https://jessn-dev.github.io/CTI-Lab/)** — the full Stripe-style docs site (auth, endpoints, cURL/Python/JS snippets, error maps), deployed via **GitHub Pages** from `/docs`.
 
@@ -61,17 +61,17 @@ malware   : VirusTotal  MALWARE DETECTED 65/74
 <a name="what"></a>
 ## 1. What it does
 
-- **Bait** — an Ubuntu container runs a real `sshd` with a deliberately weak
+- **Bait.** An Ubuntu container runs a real `sshd` with a deliberately weak
   `root:toor` login exposed on port `2222`.
-- **Monitor** — the honeypot has a **Wazuh agent baked in**. It enrolls with the
+- **Monitor.** The honeypot has a **Wazuh agent baked in**. It enrolls with the
   Wazuh manager on boot and ships `auth.log` and File Integrity Monitoring (FIM)
   events. This is the piece that makes the SIEM story *true*: the manager
   actually receives telemetry.
-- **Attack** — `scripts/simulate_attacks.py` uses **paramiko** to perform a real
+- **Attack.** `scripts/simulate_attacks.py` uses **paramiko** to perform a real
   SSH brute-force, then opens a session and runs post-exploitation (recon,
   credential dumping, a backdoor account, an EICAR malware drop, log wiping).
-- **Detect** — Wazuh's built-in rules flag the brute-force and the dropped file.
-- **Respond (SOAR)** —
+- **Detect.** Wazuh's built-in rules flag the brute-force and the dropped file.
+- **Respond (SOAR):**
   - `scripts/active_defense.py` runs on the honeypot as a **Wazuh Active
     Response** and `iptables`-bans the attacker's IP (auto-unban on timeout).
   - `scripts/malware_capture.py` runs on the manager as a **Wazuh integration**,
@@ -213,7 +213,7 @@ docker exec -it wazuh.manager /var/ossec/bin/agent_control -l
 
 ### Custom dashboard (shipped as code)
 
-The lab includes a purpose-built **"CTI · Threat Overview"** dashboard — top
+The lab includes a custom **"CTI · Threat Overview"** dashboard: top
 attacker IPs, alert-level distribution, MITRE ATT&CK techniques, alerts over
 time, top rules, and a total-alert metric. Its saved objects live in
 `config/wazuh_dashboard/cti-dashboard.ndjson` and import automatically on
@@ -228,8 +228,8 @@ version them.
 
 ### Prefer the terminal? Use `logs.sh`
 
-The dashboard is optional — everything is in log files + the indexer. `logs.sh`
-tails them for you, no paths to remember:
+The dashboard is optional. Everything lives in log files and the indexer, and
+`logs.sh` tails them so you don't have to remember the paths:
 
 ```bash
 ./logs.sh          # live alert stream (human-readable)
@@ -243,10 +243,10 @@ tails them for you, no paths to remember:
 <a name="analyst"></a>
 ## 6b. AI Threat Analyst (Phase A)
 
-`scripts/threat_report.py` closes the loop: it reads the Wazuh detections the
-lab produced and asks an LLM to write a **MITRE ATT&CK incident report** —
-executive summary, kill-chain timeline, technique table, IOCs, severity, and
-recommended actions. It runs **offline on the logs**, never in the attack path,
+`scripts/threat_report.py` reads the Wazuh detections the lab produced and asks
+an LLM to write a **MITRE ATT&CK incident report**: executive summary,
+kill-chain timeline, technique table, IOCs, severity, and recommended actions.
+It runs **offline on the logs**, never in the attack path,
 so there is no added latency or prompt-injection exposure.
 
 ```bash
@@ -260,11 +260,11 @@ python3 scripts/threat_report.py --input path/to/alerts.json
 Output lands in `reports/threat_report_<timestamp>.md`.
 
 **Guardrails:**
-- **Egress / PII** — attacker IPs, usernames, and file hashes are **pseudonymised
+- **Egress / PII.** Attacker IPs, usernames, and file hashes are **pseudonymised
   before leaving the host** (`IP_1`, `USER_1`, `HASH_1`); the provider only ever
   sees tokens, and real values are substituted back into the local report. Toggle
   with `REDACT_PII` (default `true`).
-- **Rate limit** — a sliding-window cap (`GEMINI_MAX_RPM`, default 10) enforced
+- **Rate limit.** A sliding-window cap (`GEMINI_MAX_RPM`, default 10) enforced
   *across runs* keeps you under the free-tier quota, plus 429/5xx retry with
   exponential backoff (`GEMINI_MAX_RETRIES`). You can't accidentally blow the cap.
 

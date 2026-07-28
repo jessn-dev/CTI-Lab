@@ -184,7 +184,7 @@ malware   : VirusTotal <span class="t-hit">MALWARE DETECTED 65/74</span></div>
                 <ul>
                     <li><strong>Command &amp; response simulation.</strong> An SSH command routes to the model, which returns a context-aware response within tight latency limits — powered by optimisations like model pruning, quantisation, and parallel processing so the illusion never lags.</li>
                     <li><strong>Reinforcement Learning (RL).</strong> The system is an agent in a Markov Decision Process: it observes state (attacker commands, session context), picks an action (a simulated response), and updates its policy from the reward (did the deception hold?). Over many sessions it learns to prolong engagement and extract more intelligence.</li>
-                    <li><strong>Dynamic environment generation.</strong> The simulated network, services, and logs are procedurally generated and mutated on the fly — new vulnerabilities, altered configs, even a changed topology — so the attacker faces a constantly shifting landscape and can't pin down the decoy.</li>
+                    <li><strong>Dynamic environment generation.</strong> The simulated network, services, and logs are procedurally generated and mutated on the fly (new vulnerabilities, altered configs, even a changed topology), so what the attacker sees keeps changing and they can't pin down the decoy.</li>
                 </ul>
 
                 <h3>Operational workflow</h3>
@@ -210,7 +210,7 @@ malware   : VirusTotal <span class="t-hit">MALWARE DETECTED 65/74</span></div>
 
                 <div class="callout info">
                     <span class="ic">◆</span>
-                    <div><strong>This lab is the foundation.</strong> The pieces an AI honeypot needs are already here: a real SSH honeypot, a <code class="tick">paramiko</code> attack harness, a SIEM ingesting every event, and Python SOAR acting on detections. The next step is swapping the static <code class="tick">sshd</code> for an LLM-driven shell that generates responses per command — evolving this from a <em>detection</em> lab into an <em>adaptive-deception</em> one. See <code class="tick">docs/ROADMAP.md</code> for the phased plan.</div>
+                    <div><strong>This lab is the foundation.</strong> Most of what an AI honeypot needs already exists here: a real SSH honeypot, a <code class="tick">paramiko</code> attack harness, a SIEM ingesting every event, and Python SOAR acting on detections. The next step is to swap the static <code class="tick">sshd</code> for an LLM-driven shell that generates responses per command. That turns this from a <em>detection</em> lab into an <em>adaptive-deception</em> one. See <code class="tick">docs/ROADMAP.md</code> for the phased plan.</div>
                 </div>
             </section>
 

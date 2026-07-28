@@ -17,6 +17,18 @@ if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^linux-honeypot$'; t
     exit 1
 fi
 
+# Clear any lingering Active-Response ban from a previous run so this run isn't
+# blocked before it starts. The 600s iptables DROP on the attacker IP survives
+# between runs; without this, re-running attack.sh within 10 min fails at the
+# brute-force burst with "Error reading SSH protocol banner". We flush INPUT and
+# restore only the baseline ESTABLISHED,RELATED accept rule.
+echo "[*] Clearing any stale Active-Response ban on the honeypot..."
+docker exec linux-honeypot sh -c \
+    "iptables -F INPUT 2>/dev/null; \
+     iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null; \
+     : > /var/ossec/logs/active-responses.log 2>/dev/null; \
+     rm -f /tmp/eicar.com.txt 2>/dev/null" 2>/dev/null || true
+
 # shellcheck disable=SC1091
 source venv/bin/activate
 python3 scripts/simulate_attacks.py

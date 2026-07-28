@@ -22,11 +22,19 @@ import socket
 import time
 import sys
 
+import logging
+
 try:
     import paramiko
 except ImportError:
     print("[!] paramiko not installed. Run: pip install -r requirements.txt")
     sys.exit(1)
+
+# paramiko's transport thread logs full "Error reading SSH protocol banner"
+# tracebacks to stderr on every dropped connection (e.g. once Active Response
+# starts blocking us) - regardless of our try/except. Silence it so the sim
+# output stays readable; we handle and report connection failures ourselves.
+logging.getLogger("paramiko").setLevel(logging.CRITICAL)
 
 HOST = os.environ.get("HONEYPOT_HOST", "127.0.0.1")
 PORT = int(os.environ.get("HONEYPOT_PORT", "2222"))
@@ -50,7 +58,7 @@ def print_phase(phase, name, mitre, diamond, desc):
     print(f"[{bar}]")
 
 
-def try_login(password, retries=3):
+def try_login(password, retries=3, quiet=False):
     """One SSH auth attempt. Returns a connected client on success, else None.
 
     Retries transient transport errors ("Error reading SSH protocol banner",
@@ -76,7 +84,8 @@ def try_login(password, retries=3):
             if attempt < retries:
                 time.sleep(1.5 * attempt)  # back off, sshd may be throttling
                 continue
-            print(f"    [!] connection error after {retries} tries: {exc}")
+            if not quiet:
+                print(f"    [!] connection error after {retries} tries: {exc}")
             return None
 
 
@@ -136,12 +145,18 @@ def main():
     # Keep hammering (throwaway connections) to push past the brute-force
     # threshold so Wazuh rule 5763 fires and Active Response bans the source.
     print("[*] Continuing the brute-force to trip SIEM detection + Active Response...")
+    sent = 0
     for i in range(12):
-        c = try_login(f"rockyou_{i}", retries=1)
+        # quiet=True: once Active Response bans us mid-burst, further NEW
+        # connections are dropped by design - that's the response working, not
+        # an error, so we don't spam a failure line per attempt.
+        c = try_login(f"rockyou_{i}", retries=1, quiet=True)
         if c:
             c.close()
+        sent += 1
+        print(f"    [*] burst {sent}/12", end="\r", flush=True)
         time.sleep(0.3)
-    print("[+] Brute-force burst done. Wazuh should now ban the source IP "
+    print("\n[+] Brute-force burst done. Wazuh should now ban the source IP "
           "(new connections blocked; this foothold persists).")
     time.sleep(2)
 

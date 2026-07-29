@@ -62,6 +62,8 @@ services:
       # Active-Response executable must also resolve on the manager (it validates
       # the command's binary before dispatching the order to the agent).
       - ./scripts/active_defense.py:/var/ossec/active-response/bin/active_defense.py:ro
+      # Local rules (classify beelzebub honeypot events - B1).
+      - ./config/wazuh_manager/local_rules.xml:/var/ossec/etc/rules/local_rules.xml:ro
 
   wazuh.indexer:
     image: wazuh/wazuh-indexer:4.8.0

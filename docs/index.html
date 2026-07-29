@@ -201,7 +201,7 @@
 
                 <div class="callout info">
                     <span class="ic">◆</span>
-                    <div><strong>This lab is the foundation.</strong> Most of what an AI honeypot needs already exists here: a real SSH honeypot, a <code class="tick">paramiko</code> attack harness, a SIEM ingesting every event, and Python SOAR acting on detections. The next step is to swap the static <code class="tick">sshd</code> for an LLM-driven shell that generates responses per command. That turns this from a <em>detection</em> lab into an <em>adaptive-deception</em> one. See <code class="tick">docs/ROADMAP.md</code> for the phased plan.</div>
+                    <div><strong>This lab is the foundation.</strong> Most of what an AI honeypot needs already exists here: a real SSH honeypot, a <code class="tick">paramiko</code> attack harness, a SIEM ingesting every event, and Python SOAR acting on detections. The next step is to swap the static <code class="tick">sshd</code> for an LLM-driven shell that generates responses per command. The plan uses two tools for two jobs: <strong>beelzebub</strong> for breadth (a multi-protocol honeypot framework with metrics) and <strong>shelLM</strong> for depth (a consistency-focused LLM SSH shell), run side by side and benchmarked in the same SIEM. That turns this from a <em>detection</em> lab into an <em>adaptive-deception</em> one. See <code class="tick">docs/ROADMAP.md</code> for the phased plan.</div>
                 </div>
             </section>
 

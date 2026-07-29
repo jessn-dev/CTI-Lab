@@ -1,0 +1,22 @@
+apiVersion: "v1"
+protocol: "ssh"
+address: ":2222"
+description: "Beelzebub LLM SSH honeypot (Ollama-backed)"
+# Route every command to the LLM plugin, which generates realistic shell output.
+commands:
+  - regex: "^(.+)$"
+    plugin: "LLMHoneypot"
+serverVersion: "OpenSSH"
+serverName: "ubuntu"
+# Passwords the honeypot accepts before dropping the attacker into the LLM shell.
+passwordRegex: "^(root|toor|admin|password|123456|qwerty|jenkins|postgres|ubuntu)$"
+deadlineTimeoutSeconds: 60
+plugin:
+  llmProvider: "ollama"
+  llmModel: "llama3.2:3b"
+  # Native Ollama on the host; the container reaches it via host.docker.internal.
+  host: "http://host.docker.internal:11434/api/chat"
+  # Guardrail: cap how fast a session can hit the model (bots hammer these).
+  rateLimitEnabled: true
+  rateLimitRequests: 20
+  rateLimitWindowSeconds: 60

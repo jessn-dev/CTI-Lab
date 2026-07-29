@@ -1,4 +1,4 @@
-# Roadmap / Deferred Work
+ol# Roadmap / Deferred Work
 
 Tracked so we don't lose it. Newest intent at top.
 
@@ -27,6 +27,9 @@ backend; it can be skipped for `ollama`.
 - Phase A analyst (Gemini backend) with rate-limit + PII-egress guardrails.
 - Core lab: Wazuh SIEM + honeypot agent, real brute-force sim, Active Response,
   VirusTotal FIM integration.
+- **Phase B1 — beelzebub LLM honeypot.** LLM-driven SSH shell (local Ollama), in
+  its own compose file, with a sidecar Wazuh agent forwarding events as rule
+  100301. Core lab unaffected. See README §7c.
 
 ## Phase B — AI-generated honeypots (the big vision)
 
@@ -61,20 +64,53 @@ engaged and the intelligence flowing.
 move) → federated (anonymised) intel sharing → autonomous multi-agent
 orchestration writing NL threat reports.
 
-**Concrete build path on THIS lab (the foundation is already here):**
+### Build path — two tools, two roles
+
 Most of what an AI honeypot needs already exists here: a real SSH honeypot, a
 `paramiko` attack harness, a SIEM ingesting every event, and Python SOAR acting
-on detections. The realistic increments:
-1. **LLM shell** — fork [beelzebub] / [shelLM] and replace the static `sshd` with
-   an LLM-driven fake shell in an isolated container (no real FS, no real exec).
-   Add a **world-state JSON** the model must respect (fixes consistency — the #1
-   hard problem), a **deterministic command cache** for common commands (fixes
-   latency), and a **prompt-injection guard** (attackers jailbreak the honeypot).
-   Ship transcripts into Wazuh like the real honeypot.
-   - Live/per-command model: cheap + fast (e.g. Haiku 4.5 / a local model);
-     route only novel commands to the LLM.
-2. **Consistency + latency are the real problems**, not plausibility — design for
-   them from day one. Read the shelLM paper for the documented findings.
+on detections. We implement **both** [beelzebub] and [shelLM], each for a
+different job (not two copies of the same SSH honeypot):
+
+- **[beelzebub]** gives breadth. It's a Go honeypot framework: YAML-defined
+  services across SSH, HTTP, and TCP, a built-in LLM plugin (OpenAI or Ollama),
+  and Prometheus metrics.
+- **[shelLM]** gives depth. It's a Python LLM SSH shell from Stratosphere IPS,
+  built around session **consistency** (prompt engineering + memory so `cat file`
+  matches an earlier `ls`).
+
+**B1 — beelzebub (breadth + orchestration).**
+- Add beelzebub to the Docker network as a multi-protocol decoy: SSH, HTTP, TCP,
+  each defined in YAML.
+- Point its LLM plugin at a local model (Ollama) so it stays free and offline.
+- Scrape its Prometheus metrics; ship its logs into Wazuh as a new log source.
+- Fastest win: multi-protocol coverage and metrics for little code.
+
+**B2 — shelLM (depth) + the benchmark.**
+- Run shelLM as a second SSH honeypot on its own port (e.g. 2223), beside
+  beelzebub's SSH on 2222.
+- Both feed the same Wazuh SIEM. Compare which keeps an attacker engaged longer
+  and which stays consistent across a session (the metric that actually matters).
+- This A/B is the headline: two LLM honeypot strategies, one SIEM, measured. Few
+  projects do it.
+
+**Guardrails for both (design in from day one).**
+- **Sandbox.** The LLM describes output; it never executes attacker commands. No
+  real filesystem, no real exec.
+- **Consistency.** A world-state store (shelLM's whole focus) so responses agree
+  across a session. This is the number-one hard problem.
+- **Latency.** A deterministic command cache for common commands (`ls`, `whoami`,
+  `uname`); only novel commands reach the model.
+- **Prompt-injection guard.** Attackers type "ignore previous instructions"
+  straight into the shell. Filter or refuse without breaking the illusion.
+- **Cost cap.** Bots send thousands of commands. Budget-limit live inference, or
+  use a local model.
+
+**Model choice.** Live per-command work wants something cheap and fast (a local
+model via Ollama, or a Haiku-class model); route only the interesting commands to
+it. Offline transcript analysis can use a stronger model.
+
+**Consistency and latency are the real problems, not plausibility.** Design for
+them first. The shelLM paper documents the findings.
 
 ## Phase C — adaptive engagement
 Escalate the fake surface / verbosity based on observed attacker sophistication

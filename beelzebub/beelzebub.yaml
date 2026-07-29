@@ -1,0 +1,11 @@
+core:
+  logging:
+    debug: false
+    debugReportCaller: false
+    logDisableTimestamp: false
+    # Honeypot interaction events are written here as JSON lines. This file is
+    # the log source the Wazuh agent tails (see E4 in the plan).
+    logsPath: /logs/beelzebub.json
+  prometheus:
+    path: "/metrics"
+    port: ":2112"

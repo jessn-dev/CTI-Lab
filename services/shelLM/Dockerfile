@@ -44,6 +44,11 @@ RUN python3 -m venv /opt/shelLM/venv \
     && /opt/shelLM/venv/bin/pip install --no-cache-dir \
         openai python-dotenv pyyaml requests tiktoken
 
+# Strip the stray leading "assistant" role label llama3.2:3b echoes (upstream's
+# own output cleaning is commented out) so it never reaches the attacker.
+COPY services/shelLM/patch_ollama_client.py /tmp/patch_ollama_client.py
+RUN python3 /tmp/patch_ollama_client.py && rm /tmp/patch_ollama_client.py
+
 # --- Honeypot bait: weak root:toor login, forced into the shelLM shell -------
 RUN mkdir -p /var/run/sshd \
     && echo 'root:toor' | chpasswd \

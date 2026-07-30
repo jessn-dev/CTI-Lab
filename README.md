@@ -20,7 +20,7 @@ an Active-Response IP ban and a VirusTotal malware lookup.
 
 Everything runs in Docker on a single host. No cloud account, no separate VMs.
 
-📚 **[API reference & developer portal →](https://jessn-dev.github.io/CTI-Lab/)** — the full Stripe-style docs site (auth, endpoints, cURL/Python/JS snippets, error maps), deployed via **GitHub Pages** from `/docs`.
+📚 **[API reference & developer portal →](https://jessn-dev.github.io/CTI-Lab/)** — a full API-reference docs site (auth, endpoints, cURL/Python/JS snippets, error maps), deployed via **GitHub Pages** from `/docs`.
 
 ## Demo
 

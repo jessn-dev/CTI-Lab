@@ -1,10 +1,10 @@
 /* ==========================================================================
-   CTI Lab — Developer Portal  (Stripe / Twilio-inspired)
+   CTI Lab — Developer Portal
    Three columns: sticky nav · prose · sticky code panel.
    ========================================================================== */
 
 :root {
-    /* Stripe-ish palette with a security cyan accent */
+    /* Dark palette with a security cyan accent */
     --navy:      #0a2540;
     --slate:     #3c4257;
     --muted:     #697386;
@@ -108,7 +108,7 @@ body {
 }
 .sidebar-foot a { color: var(--accent); text-decoration: none; font-weight: 600; }
 
-/* ---- Main content (Twilio typography) ------------------------------------- */
+/* ---- Main content typography --------------------------------------------- */
 .content {
     padding: 3.5rem 3.5rem 6rem;
     overflow-y: auto;
@@ -243,7 +243,7 @@ td .mono { font-family: 'Fira Code', monospace; font-size: 0.82em; color: var(--
 .result-card .v { font-size: 1.5rem; font-weight: 700; color: var(--navy); margin: 0.35rem 0 0.1rem; letter-spacing: -0.02em; }
 .result-card .s { font-size: 0.8rem; color: var(--success); font-weight: 600; }
 
-/* ==== Code panel (Stripe style, sticky) ==================================== */
+/* ==== Code panel (sticky) ================================================== */
 .code-panel {
     background: var(--code-bg);
     display: flex;

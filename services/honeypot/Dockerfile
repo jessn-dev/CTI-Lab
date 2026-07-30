@@ -19,7 +19,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3 \
         procps \
         sudo \
+        snoopy \
     && rm -rf /var/lib/apt/lists/*
+
+# Command auditing (Phase C1): snoopy is an LD_PRELOAD execve logger — it captures
+# EVERY command run on the box, including the non-interactive `exec_command`s the
+# attack sim uses (which bash history / auditd would miss; auditd also can't get
+# the kernel audit netlink inside a container). We configure it here but only
+# activate the preload at runtime (entrypoint), so build-step commands aren't
+# logged. One line per command -> /var/log/snoopy.log -> Wazuh reads it.
+RUN printf '\nmessage_format = "snoopy: user=%%{username} uid=%%{uid} tty=%%{tty} cwd=%%{cwd} cmd=%%{cmdline}"\noutput = file:/var/log/snoopy.log\n' \
+        >> /etc/snoopy.ini
 
 # Install the Wazuh agent (matches the 4.8.0 manager).
 RUN curl -s https://packages.wazuh.com/key/GPG-KEY-WAZUH | \

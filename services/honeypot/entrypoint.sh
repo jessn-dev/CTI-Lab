@@ -44,6 +44,19 @@ fi
 echo "[honeypot] starting Wazuh agent..."
 /var/ossec/bin/wazuh-control start || echo "[honeypot] WARN: wazuh-control start returned non-zero."
 
+# Command auditing (Phase C1): activate snoopy's LD_PRELOAD now, AFTER the agent
+# is up, so it logs attacker commands (sshd children) rather than our own startup.
+# Pre-create the log so the agent's logcollector can open it at boot.
+echo "[honeypot] enabling snoopy command auditing..."
+touch /var/log/snoopy.log
+SNOOPY_LIB="$(dpkg -L snoopy 2>/dev/null | grep -E 'libsnoopy\.so$' | head -1)"
+if [ -n "$SNOOPY_LIB" ]; then
+    echo "$SNOOPY_LIB" > /etc/ld.so.preload
+    echo "[honeypot] snoopy active ($SNOOPY_LIB) -> /var/log/snoopy.log"
+else
+    echo "[honeypot] WARN: libsnoopy.so not found; command auditing disabled."
+fi
+
 echo "[honeypot] starting sshd on :22 (root:toor bait)..."
 # NOTE: no -e flag. -e sends sshd logs to stderr instead of syslog; we need
 # sshd to log via syslog so rsyslog writes /var/log/auth.log, which the Wazuh

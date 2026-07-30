@@ -1,0 +1,17 @@
+<!--
+  Local decoders for the Threat Intelligence Lab.
+
+  Phase C1: parse the honeypot's snoopy command-audit log. Each line looks like:
+    snoopy: user=root uid=0 tty=(none) cwd=/ cmd=cat /etc/shadow
+  The extracted `command` field is what the local rules (100410+) classify into
+  sophistication categories, which the correlation rules (Phase C2) escalate.
+-->
+<decoder name="snoopy">
+  <prematch>^snoopy: </prematch>
+</decoder>
+
+<decoder name="snoopy-fields">
+  <parent>snoopy</parent>
+  <regex type="pcre2">user=(\S+) uid=(\d+) tty=(\S+) cwd=(\S+) cmd=(.+)$</regex>
+  <order>srcuser, uid, tty, cwd, command</order>
+</decoder>

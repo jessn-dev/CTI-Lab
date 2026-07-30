@@ -58,3 +58,60 @@
   </rule>
 
 </group>
+
+<!--
+  Phase C1 — honeypot command classification (snoopy command-audit log).
+  Each executed command is decoded (see local_decoder.xml) and sorted into a
+  MITRE-ish sophistication category. These category rules are the raw signal the
+  Phase C2 correlation rules escalate into attacker tiers. IDs: 100410-100419.
+-->
+<group name="honeypot,command,">
+
+  <!-- Base: any command executed on the honeypot (decoded from snoopy). Low. -->
+  <rule id="100410" level="2">
+    <decoded_as>snoopy</decoded_as>
+    <description>Honeypot: command executed - $(command)</description>
+    <options>no_full_log</options>
+  </rule>
+
+  <!-- Recon / discovery: enumerating the host, users, network. -->
+  <rule id="100411" level="5">
+    <if_sid>100410</if_sid>
+    <field name="command" type="pcre2">(?i)\b(whoami|id|uname|hostname|netstat|ss|ifconfig|ip\s+a|ps\s|lscpu|cat\s+/etc/(passwd|issue|os-release))\b</field>
+    <description>Honeypot recon/discovery: $(command)</description>
+    <group>attack,recon,discovery,</group>
+  </rule>
+
+  <!-- Credential access: reading secrets. -->
+  <rule id="100412" level="7">
+    <if_sid>100410</if_sid>
+    <field name="command" type="pcre2">(?i)(cat|less|more|head|tail)\s+.*(shadow|id_rsa|\.ssh|credentials|\.aws|\.env|backup.*\.sql)</field>
+    <description>Honeypot credential access: $(command)</description>
+    <group>attack,credential_access,</group>
+  </rule>
+
+  <!-- Ingress tool transfer: pulling payloads onto the box. -->
+  <rule id="100413" level="7">
+    <if_sid>100410</if_sid>
+    <field name="command" type="pcre2">(?i)\b(wget|curl|scp|tftp|nc|ncat|socat)\b</field>
+    <description>Honeypot ingress/tool transfer: $(command)</description>
+    <group>attack,command_control,</group>
+  </rule>
+
+  <!-- Persistence: backdoor accounts, cron, keys, services. -->
+  <rule id="100414" level="8">
+    <if_sid>100410</if_sid>
+    <field name="command" type="pcre2">(?i)(useradd|adduser|usermod|chpasswd|crontab|authorized_keys|systemctl\s+enable|update-rc\.d)</field>
+    <description>Honeypot persistence attempt: $(command)</description>
+    <group>attack,persistence,</group>
+  </rule>
+
+  <!-- Defense evasion: wiping logs / history. -->
+  <rule id="100415" level="8">
+    <if_sid>100410</if_sid>
+    <field name="command" type="pcre2">(?i)(history\s+-c|shred|rm\s+-rf\s+/var/log|:\s*>\s*/var/log|&gt;\s*/var/log/auth\.log|unset\s+HISTFILE)</field>
+    <description>Honeypot defense evasion (log/history wipe): $(command)</description>
+    <group>attack,defense_evasion,</group>
+  </rule>
+
+</group>

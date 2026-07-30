@@ -1,12 +1,13 @@
 # ==============================================================================
-# B1 — beelzebub LLM honeypot (breadth). Separate compose file so it can't
-# disturb the proven detection -> response lab (docker-compose.yml).
+# B1 — beelzebub LLM honeypot (breadth: multi-protocol decoy).
 #
-#   docker compose -f beelzebub-compose.yml up -d
+#   run this: docker compose -f compose/beelzebub.yml up -d
 #
 # Backed by the native Ollama on the host (http://host.docker.internal:11434).
-# SSH honeypot on host port 2323; Prometheus metrics on 2112.
+# SSH honeypot on host port 2323; Prometheus metrics on 2112. `name:` pins the
+# shared project so the sidecar agent reaches wazuh.manager by hostname.
 # ==============================================================================
+name: threat-intelligence-lab
 
 services:
   beelzebub:
@@ -18,16 +19,16 @@ services:
       - "2323:2222"              # LLM SSH honeypot
       - "2112:2112"              # Prometheus metrics
     volumes:
-      - ./beelzebub:/configurations:ro
+      - ../services/beelzebub/config:/configurations:ro
       - beelzebub-logs:/logs     # JSON event log (Wazuh reads this - see B1 plan E4)
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
   # Sidecar Wazuh agent: tails beelzebub's JSON log and forwards it to the
-  # manager. Shares the same Docker network as the SIEM (same compose project),
-  # so it reaches wazuh.manager by hostname.
+  # manager. Shares the SIEM's network (same pinned project name).
   beelzebub-agent:
-    build: ./beelzebub-agent
+    build:
+      context: ../services/beelzebub/agent
     image: threat-lab/beelzebub-agent:latest
     container_name: beelzebub-agent
     hostname: beelzebub-agent

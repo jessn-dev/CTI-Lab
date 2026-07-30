@@ -1,12 +1,13 @@
 # One-shot: generates the TLS certificates used by the Wazuh indexer, manager
 # and dashboard into ./config/wazuh_indexer_ssl_certs/. Driven by config/certs.yml.
 # start_lab.sh runs this automatically the first time. To regenerate manually:
-#   docker compose -f generate-certs.yml run --rm generator
+#   docker compose -f compose/generate-certs.yml run --rm generator
+name: threat-intelligence-lab-certs
 
 services:
   generator:
     image: wazuh/wazuh-certs-generator:0.0.2
     hostname: wazuh-certs-generator
     volumes:
-      - ./config/wazuh_indexer_ssl_certs/:/certificates/
-      - ./config/certs.yml:/config/certs.yml
+      - ../services/wazuh-config/wazuh_indexer_ssl_certs/:/certificates/
+      - ../services/wazuh-config/certs.yml:/config/certs.yml

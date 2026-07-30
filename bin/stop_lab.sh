@@ -1,7 +1,7 @@
 #!/bin/bash
 # Tear down the lab. Pass --wipe to also delete all data volumes (fresh start).
 set -euo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."   # scripts live in bin/; run from the repo root
 
 if docker compose version >/dev/null 2>&1; then DC="docker compose"; else DC="docker-compose"; fi
 

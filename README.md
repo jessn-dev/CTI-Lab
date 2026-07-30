@@ -24,9 +24,9 @@ Everything runs in Docker on a single host. No cloud account, no separate VMs.
 
 ## Demo
 
-![One `./attack.sh` run: the honeypot is compromised, and Wazuh detects, bans, and flags it automatically.](docs/assets/attack.gif)
+![One `./bin/attack.sh` run: the honeypot is compromised, and Wazuh detects, bans, and flags it automatically.](docs/assets/attack.gif)
 
-*One `./attack.sh` run, from the real lab: brute-force → foothold → EICAR drop, and Wazuh's automatic response — brute-force detection (rule 5763), an iptables ban, and a VirusTotal verdict.*
+*One `./bin/attack.sh` run, from the real lab: brute-force → foothold → EICAR drop, and Wazuh's automatic response — brute-force detection (rule 5763), an iptables ban, and a VirusTotal verdict.*
 
 The custom **CTI · Threat Overview** dashboard after a few runs — top attacker IP, alert levels, MITRE ATT&CK techniques, top rules, and alerts over time:
 
@@ -47,6 +47,7 @@ The custom **CTI · Threat Overview** dashboard after a few runs — top attacke
 7. [Project layout](#layout)
 7b. [Scripts reference](#scripts)
 7c. [Add-on: beelzebub LLM honeypot](#beelzebub)
+7d. [Add-on: shelLM LLM honeypot](#shellm)
 8. [Scope, honesty & limitations](#limits)
 9. [Troubleshooting](#troubleshooting)
 
@@ -61,14 +62,14 @@ The custom **CTI · Threat Overview** dashboard after a few runs — top attacke
   Wazuh manager on boot and ships `auth.log` and File Integrity Monitoring (FIM)
   events. This is the piece that makes the SIEM story *true*: the manager
   actually receives telemetry.
-- **Attack.** `scripts/simulate_attacks.py` uses **paramiko** to perform a real
+- **Attack.** `src/redteam/simulate_attacks.py` uses **paramiko** to perform a real
   SSH brute-force, then opens a session and runs post-exploitation (recon,
   credential dumping, a backdoor account, an EICAR malware drop, log wiping).
 - **Detect.** Wazuh's built-in rules flag the brute-force and the dropped file.
 - **Respond (SOAR):**
-  - `scripts/active_defense.py` runs on the honeypot as a **Wazuh Active
+  - `src/soar/active_defense.py` runs on the honeypot as a **Wazuh Active
     Response** and `iptables`-bans the attacker's IP (auto-unban on timeout).
-  - `scripts/malware_capture.py` runs on the manager as a **Wazuh integration**,
+  - `src/soar/malware_capture.py` runs on the manager as a **Wazuh integration**,
     pulls the FIM SHA-256 out of the alert, and queries the **VirusTotal API**.
 
 <a name="architecture"></a>
@@ -150,26 +151,26 @@ SIEM live, instead of it happening before you've even logged in.
 ```bash
 git clone <this-repo> && cd threat-intelligence-lab
 cp .env.example .env          # optional: VirusTotal + Gemini API keys
-chmod +x *.sh
+chmod +x bin/*.sh
 
 # 1. Bring the lab up (SIEM + honeypot) and wait for the agent to connect.
-./start_lab.sh
+./bin/start_lab.sh
 
 # 2. Open https://localhost:8443 (admin / SecretPassword), go to
 #    Threat Hunting → Security Alerts, then in another terminal:
-./attack.sh                   # launch the adversary simulation — watch it appear
+./bin/attack.sh                   # launch the adversary simulation — watch it appear
 
 # 3. (optional) Generate an AI MITRE ATT&CK report from the detections.
-./report.sh
+./bin/report.sh
 ```
 
 `start_lab.sh` generates the Wazuh TLS certs (first run), raises
 `vm.max_map_count`, builds the honeypot, brings the stack up, prepares the Python
 venv, and **waits for the honeypot agent to connect** — then stops and tells you
-to open the dashboard and run `./attack.sh`. It does **not** auto-attack, so you
+to open the dashboard and run `./bin/attack.sh`. It does **not** auto-attack, so you
 see the kill chain unfold in real time.
 
-Tear down with `./stop_lab.sh` (add `--wipe` to also delete the data volumes).
+Tear down with `./bin/stop_lab.sh` (add `--wipe` to also delete the data volumes).
 
 ### Access points
 | Service | URL / command | Port | Credentials |
@@ -179,6 +180,7 @@ Tear down with `./stop_lab.sh` (add `--wipe` to also delete the data volumes).
 | Wazuh manager API | `curl -k -u wazuh-wui:'MyS3cr37P450r.*-' https://localhost:55000` | 55000 | `wazuh-wui` / `MyS3cr37P450r.*-` |
 | SSH honeypot (static) | `ssh root@localhost -p 2222` | 2222 | password `toor` |
 | SSH honeypot (beelzebub LLM, opt-in) | `ssh root@localhost -p 2323` | 2323 | password `toor` |
+| SSH honeypot (shelLM LLM, opt-in) | `ssh root@localhost -p 2224` | 2224 | password `toor` |
 | beelzebub metrics | `curl http://localhost:2112/metrics` | 2112 | — |
 | API docs portal | [jessn-dev.github.io/CTI-Lab](https://jessn-dev.github.io/CTI-Lab/) | — | — |
 | Threat reports (Phase A) | `reports/threat_report_<timestamp>.md` | — | — |
@@ -212,12 +214,12 @@ docker exec -it wazuh.manager /var/ossec/bin/agent_control -l
 The lab includes a custom **"CTI · Threat Overview"** dashboard: top
 attacker IPs, alert-level distribution, MITRE ATT&CK techniques, alerts over
 time, top rules, and a total-alert metric. Its saved objects live in
-`config/wazuh_dashboard/cti-dashboard.ndjson` and import automatically on
-startup (or run `./import-dashboard.sh`).
+`services/wazuh-config/wazuh_dashboard/cti-dashboard.ndjson` and import automatically on
+startup (or run `./bin/import-dashboard.sh`).
 
 It's also set as the **default landing page** — after you log in you go straight
 to it (via `uiSettings.overrides.defaultRoute` in
-`config/wazuh_dashboard/opensearch_dashboards.yml`). To reach the stock Wazuh
+`services/wazuh-config/wazuh_dashboard/opensearch_dashboards.yml`). To reach the stock Wazuh
 overview instead, use the ☰ menu → Wazuh; to revert, set `defaultRoute` back to
 `/app/wz-home`. Build your own panels in the UI and re-export the NDJSON to
 version them.
@@ -228,18 +230,18 @@ The dashboard is optional. Everything lives in log files and the indexer, and
 `logs.sh` tails them so you don't have to remember the paths:
 
 ```bash
-./logs.sh          # live alert stream (human-readable)
-./logs.sh json     # live alerts: level | rule | srcip | description  (!! = level ≥ 10)
-./logs.sh ar       # Active-Response bans
-./logs.sh vt       # VirusTotal integration
-./logs.sh auth     # honeypot raw SSH auth.log
-./logs.sh agents   # enrolled agents + status
+./bin/logs.sh          # live alert stream (human-readable)
+./bin/logs.sh json     # live alerts: level | rule | srcip | description  (!! = level ≥ 10)
+./bin/logs.sh ar       # Active-Response bans
+./bin/logs.sh vt       # VirusTotal integration
+./bin/logs.sh auth     # honeypot raw SSH auth.log
+./bin/logs.sh agents   # enrolled agents + status
 ```
 
 <a name="analyst"></a>
 ## 6b. AI Threat Analyst (Phase A)
 
-`scripts/threat_report.py` reads the Wazuh detections the lab produced and asks
+`src/soar/threat_report.py` reads the Wazuh detections the lab produced and asks
 an LLM to write a **MITRE ATT&CK incident report**: executive summary,
 kill-chain timeline, technique table, IOCs, severity, and recommended actions.
 It runs **offline on the logs**, never in the attack path,
@@ -248,9 +250,9 @@ so there is no added latency or prompt-injection exposure.
 ```bash
 cp .env.example .env          # add GEMINI_API_KEY (free: https://aistudio.google.com)
 source venv/bin/activate
-python3 scripts/threat_report.py        # pulls alerts from wazuh.manager
+python3 src/soar/threat_report.py        # pulls alerts from wazuh.manager
 # or analyse a saved file:
-python3 scripts/threat_report.py --input path/to/alerts.json
+python3 src/soar/threat_report.py --input path/to/alerts.json
 ```
 
 Output lands in `reports/threat_report_<timestamp>.md`.
@@ -273,7 +275,7 @@ third-party egress entirely.
 <a name="attack"></a>
 ## 6c. Attack it yourself (manual)
 
-`./attack.sh` automates the kill chain, but the honeypot is a real `sshd` — you
+`./bin/attack.sh` automates the kill chain, but the honeypot is a real `sshd` — you
 can attack it by hand and watch Wazuh react. Open the dashboard first
 (`https://localhost:8443` → **Threat Hunting → Security Alerts**).
 
@@ -316,29 +318,44 @@ inbound `2222`, and both devices are on the same network.)
 ## 7. Project layout
 
 ```
-docker-compose.yml            # SIEM (indexer/manager/dashboard) + honeypot
-generate-certs.yml            # one-shot Wazuh TLS cert generator
-start_lab.sh                  # bring the lab up, wait for the agent (no auto-attack)
-attack.sh                     # run the adversary simulation on demand
-report.sh                     # generate the AI threat report
-logs.sh                       # view the SIEM from a terminal (no dashboard)
-import-dashboard.sh           # load the custom "CTI · Threat Overview" dashboard
-stop_lab.sh                   # tear down (--wipe clears volumes)
+docker-compose.yml            # umbrella: `include`s every stack under compose/
+compose/                      # one compose file per stack (all pin the same project)
+  wazuh.yml                   # SIEM: indexer + manager + dashboard
+  honeypot.yml                # static SSH honeypot (baked Wazuh agent)
+  beelzebub.yml               # B1: beelzebub LLM honeypot + sidecar agent
+  shellm.yml                  # B2: shelLM LLM honeypot (baked agent)
+  generate-certs.yml          # one-shot Wazuh TLS cert generator
+bin/                          # operator CLI (run these)
+  start_lab.sh                # bring the core lab up, wait for the agent (no auto-attack)
+  attack.sh                   # run the adversary simulation on demand
+  report.sh                   # generate the AI threat report
+  logs.sh                     # view the SIEM from a terminal (no dashboard)
+  import-dashboard.sh         # load the custom "CTI · Threat Overview" dashboard
+  stop_lab.sh                 # tear down (--wipe clears volumes)
+src/                          # the code that runs inside the lab
+  soar/                       # defensive automation (runs in Wazuh)
+    active_defense.py         # Active Response: iptables ban
+    malware_capture.py        # integration: VirusTotal hash lookup
+    threat_report.py          # Phase A: AI analyst -> MITRE ATT&CK report
+  redteam/
+    simulate_attacks.py       # paramiko red-team (Cyber Kill Chain)
+    benchmark.py              # B2 Part 2: shelLM vs beelzebub consistency benchmark
+services/                     # per-stack build + config assets
+  wazuh-config/               # Wazuh config consumed by the SIEM stack
+    wazuh_dashboard/cti-dashboard.ndjson  # custom dashboard (saved objects, as code)
+    wazuh_cluster/wazuh_manager.conf   # + custom Active Response & VT integration
+    wazuh_manager/local_rules.xml      # local rules (beelzebub 1003xx, shelLM 1003xx)
+    wazuh_indexer/  wazuh_dashboard/   # official single-node config
+    certs.yml                          # cert generator inventory
+  honeypot/                   # static honeypot image
+    Dockerfile                # Ubuntu + sshd + rsyslog + Wazuh agent
+    entrypoint.sh             # enroll agent, start rsyslog + sshd
+    agent-fim.conf            # realtime FIM on /tmp, /home, /root
+  beelzebub/                  # B1 LLM honeypot
+    config/                   # beelzebub.yaml + services/ (mounted to /configurations)
+    agent/                    # sidecar Wazuh agent image
+  shelLM/                     # B2 honeypot image (sshd ForceCommand -> shelLM chatbot)
 requirements.txt / .env.example
-honeypot/
-  Dockerfile                  # Ubuntu + sshd + rsyslog + Wazuh agent
-  entrypoint.sh               # enroll agent, start rsyslog + sshd
-  agent-fim.conf              # realtime FIM on /tmp, /home, /root
-config/
-  wazuh_dashboard/cti-dashboard.ndjson  # custom dashboard (saved objects, as code)
-  wazuh_cluster/wazuh_manager.conf   # + custom Active Response & VT integration
-  wazuh_indexer/  wazuh_dashboard/   # official single-node config
-  certs.yml                          # cert generator inventory
-scripts/
-  simulate_attacks.py         # paramiko red-team (Cyber Kill Chain)
-  active_defense.py           # Wazuh Active Response: iptables ban
-  malware_capture.py          # Wazuh integration: VirusTotal hash lookup
-  threat_report.py            # Phase A: AI analyst -> MITRE ATT&CK report
 reports/                      # generated threat reports (gitignored)
 docs/                         # static portfolio site
 ```
@@ -349,17 +366,18 @@ docs/                         # static portfolio site
 Every script has a full docstring/header explaining its internals; this is the
 quick map of what each one does and when to run it.
 
-### Lifecycle (repo root)
+### Lifecycle (`bin/`)
 | Script | What it does | When |
 |--------|--------------|------|
 | `start_lab.sh` | Generates TLS certs (first run), tunes `vm.max_map_count`, builds the honeypot, brings the stack up, prepares the Python venv, waits for the agent to connect, and best-effort auto-imports the custom dashboard. **Does not attack.** | Once, to boot the lab |
 | `attack.sh` | Runs the paramiko adversary simulation against the honeypot. | On demand, while watching the dashboard |
 | `report.sh` | Runs the offline AI analyst → writes a MITRE ATT&CK report to `reports/`. | After an attack |
 | `logs.sh` | Terminal SIEM viewer — `alerts` / `json` / `ar` / `vt` / `auth` / `agents` modes. | Anytime, instead of the dashboard |
+| `benchmark.sh` | Runs the shelLM-vs-beelzebub consistency benchmark, writes a scored report to `reports/`. | After both LLM honeypots are up |
 | `import-dashboard.sh` | Imports the custom **CTI · Threat Overview** saved objects into the dashboard. | Auto-run by `start_lab.sh`; re-run if needed |
 | `stop_lab.sh` | Tears the stack down (`--wipe` also deletes data volumes). | To stop / reset |
 
-### Detection & SOAR logic (`scripts/`)
+### Detection & SOAR logic (`src/soar/` + `src/redteam/`)
 | Script | Role | How it works |
 |--------|------|--------------|
 | `simulate_attacks.py` | Red team | `paramiko` over SSH: cracks the weak login and **holds** the session, keeps brute-forcing to trip detection, then runs recon / persistence / EICAR drop / log-wipe — a real 6-phase Cyber Kill Chain. |
@@ -367,7 +385,7 @@ quick map of what each one does and when to run it.
 | `malware_capture.py` | VirusTotal integration | Runs on the manager on a FIM new-file alert. Pulls the **SHA-256 straight from the alert** and queries VirusTotal via stdlib `urllib` (no deps on the manager image). |
 | `threat_report.py` | AI analyst (Phase A) | Offline: reads Wazuh detections, **pseudonymises IOCs before egress**, applies a sliding-window **rate-limit guardrail**, and asks Gemini for a MITRE ATT&CK report. Never in the attack path. |
 
-### Honeypot image (`honeypot/`)
+### Honeypot image (`services/honeypot/`)
 | File | What it does |
 |------|--------------|
 | `entrypoint.sh` | Installs an `ESTABLISHED,RELATED` accept rule, starts `rsyslog`, pre-creates `/var/log/auth.log`, enrolls the Wazuh agent, then runs `sshd` (no `-e`, so auth logs reach syslog). |
@@ -392,7 +410,7 @@ extra config.
 
 ### Run
 ```bash
-docker compose -f beelzebub-compose.yml up -d --build
+docker compose -f compose/beelzebub.yml up -d --build
 ```
 This starts beelzebub (SSH honeypot on `2323`, Prometheus metrics on `2112`) plus
 a sidecar Wazuh agent that forwards its events.
@@ -405,18 +423,112 @@ ssh root@localhost -p 2323          # password: toor
 Every command is generated by the model and logged. In Wazuh the interactions
 show up as **rule 100301** (group `beelzebub`) with the source IP and the command
 run — query `rule.groups:beelzebub` in Discover. Stop it with
-`docker compose -f beelzebub-compose.yml down`.
+`docker compose -f compose/beelzebub.yml down`.
 
 ### How it fits
 | Piece | Role |
 |-------|------|
-| `beelzebub/` | beelzebub config: core + SSH service (LLM plugin → Ollama) |
-| `beelzebub-agent/` | sidecar Wazuh agent tailing beelzebub's JSON event log |
-| `config/wazuh_manager/local_rules.xml` | rules 100300–100302 classifying the events |
-| `beelzebub-compose.yml` | the add-on stack (beelzebub + its agent) |
+| `services/beelzebub/config/` | beelzebub config: core + SSH service (LLM plugin → Ollama) |
+| `services/beelzebub/agent/` | sidecar Wazuh agent tailing beelzebub's JSON event log |
+| `services/wazuh-config/wazuh_manager/local_rules.xml` | rules 100300–100302 classifying the events |
+| `compose/beelzebub.yml` | the add-on stack (beelzebub + its agent) |
 
 See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the full Phase B plan (beelzebub for
 breadth, shelLM for depth, benchmarked in the same SIEM).
+
+<a name="shellm"></a>
+## 7d. Add-on: shelLM LLM honeypot (Phase B2)
+
+A third honeypot: **shelLM** ([Stratosphere IPS](https://github.com/stratosphereips/shelLM)),
+an LLM SSH shell built around session **consistency** — a file you see in `ls`
+can be `cat`-ed with matching contents, so it feels like a real box rather than a
+stateless response generator. Where beelzebub gives *breadth* (multi-protocol),
+shelLM gives *depth* (a coherent shell across a session). Same local Ollama, same
+SIEM, its own compose file.
+
+### How it's wired (it's not a turnkey server)
+shelLM is a stdin/stdout LLM shell *chatbot*, not an SSH server. We expose it the
+way its paper does: a real **OpenSSH** server whose `ForceCommand` drops every
+login straight into the shelLM chatbot (needs a pty). That reuses the same
+real-`sshd` pattern as the static honeypot, with the chatbot as the shell.
+
+### Prerequisites
+Same as beelzebub — [Ollama](https://ollama.com) on the host with a model pulled:
+```bash
+ollama pull llama3.2:3b
+```
+
+### Run
+```bash
+docker compose -f compose/shellm.yml up -d --build
+```
+Starts shelLM (SSH honeypot on `2224`) with a baked-in Wazuh agent.
+
+### Try it
+```bash
+ssh root@localhost -p 2224          # password: toor
+#   echo hello123 > /tmp/note.txt
+#   cat /tmp/note.txt               # -> hello123  (consistency: the file persists)
+#   ls -la /tmp                     # note.txt is listed
+```
+Each session raises **rule 100311** (group `shellm`) with the source IP — query
+`rule.groups:shellm` in Discover. Stop it with
+`docker compose -f compose/shellm.yml down`.
+
+> **Honest note:** consistency is probabilistic on a small local model
+> (`llama3.2:3b`). It holds often but occasionally slips — the shelLM paper used
+> GPT-4-class models. That trade-off (local + free + private vs. peak coherence)
+> is exactly what Phase 2 will benchmark against beelzebub.
+
+### How it fits
+| Piece | Role |
+|-------|------|
+| `services/shelLM/Dockerfile` | Ubuntu + `sshd` (`ForceCommand`) + shelLMv2 (venv, pinned) + baked Wazuh agent |
+| `services/shelLM/run.sh` | ForceCommand target: logs a session-start JSON event, then execs the shelLM chatbot (`--provider ollama`) |
+| `services/shelLM/entrypoint.sh` | Writes shelLM config (`.env`/`.runenv`), starts `rsyslog`, enrolls the agent, runs `sshd` |
+| `services/wazuh-config/wazuh_manager/local_rules.xml` | rules 100310/100311 classifying shelLM sessions |
+| `compose/shellm.yml` | the add-on stack (shelLM + baked agent) |
+
+### SIEM ingestion (Phase 1)
+Two log sources reach Wazuh: `auth.log` (sshd → the built-in 5710/5712/5763
+rules) and a session-start JSON line per login (→ rules 100310/100311).
+Per-command ingestion (parsing shelLM's own text transcript) is a later
+refinement.
+
+### Benchmark: shelLM vs beelzebub (Part 2)
+The point of running both is to measure the thing that actually separates them —
+session **consistency** — on the *same* model, so it compares honeypot *design*,
+not the model. `src/redteam/benchmark.py` opens each honeypot over SSH and runs
+the same sequence: write a file then read it back, `ls` to see if it's listed,
+`cd` then `pwd`, `export` then `echo $VAR` — with randomized canaries so nothing
+is memorized.
+
+```bash
+./bin/benchmark.sh                 # 3 trials each, writes a scored report to reports/
+./bin/benchmark.sh --trials 5      # more trials (small-model results are noisy)
+```
+
+Result on `llama3.2:3b`, 3 trials (from a real run):
+
+| Consistency probe | shelLM | beelzebub |
+|---|---|---|
+| File read-back (`cat` matches earlier `echo`) | 3/3 | 3/3 |
+| **Listing agrees (`ls` shows the written file)** | **3/3** | **0/3** |
+| Directory persists (`cd` then `pwd`) | 3/3 | 3/3 |
+| Env recall (`export` then `echo $VAR`) | 3/3 | 3/3 |
+| **Overall** | **12/12 (100%)** | **9/12 (75%)** |
+
+Both answer every command substantively at similar latency (~4.5 s/command). The
+separation is the **`ls`-listing probe**: shelLM lists the file it just wrote
+*every* trial; beelzebub *never* does — its `ls` is a fresh, generic
+hallucination that doesn't reflect the session's state. That's the breadth
+(beelzebub: multi-protocol, per-command) vs depth (shelLM: one coherent session)
+trade-off, measured — not asserted. Both sessions are also visible in Wazuh
+(rules 100301 / 100311), so the same run doubles as SIEM data.
+
+> Even shelLM's consistency is probabilistic on a 3B local model; a GPT-4-class
+> model (as in the shelLM paper) would push the harder probes higher. The
+> benchmark is honest about that rather than cherry-picking a good run.
 
 <a name="limits"></a>
 ## 8. Scope, honesty & limitations
@@ -445,7 +557,7 @@ real:
   (`Error updating feed: parse error …`), leaving the *"Vulnerabilities by year
   of publication"* panels empty. It's also outside this lab's scope (honeypot →
   SIEM detection → SOAR response), so it's turned off in
-  `config/wazuh_cluster/wazuh_manager.conf` (`<enabled>no</enabled>`).
+  `services/wazuh-config/wazuh_cluster/wazuh_manager.conf` (`<enabled>no</enabled>`).
 
   **This is an emulation limitation, not a design flaw.** On a **dedicated
   homelab — native x86_64 Linux** (a mini-PC, an Intel/AMD server, or a Proxmox
@@ -453,7 +565,7 @@ real:
   feed downloads and parses cleanly. Flip `<enabled>yes</enabled>`, give it a few
   minutes to sync, and the *"Vulnerabilities by year of publication"* panels
   populate from the honeypot's package inventory. The lab is fully portable
-  there — same `./start_lab.sh`, and you can also re-add the Windows/RDP honeypot
+  there — same `./bin/start_lab.sh`, and you can also re-add the Windows/RDP honeypot
   since KVM is available.
 - **Credentials are lab defaults** (`admin/SecretPassword`, `root/toor`,
   `wazuh-wui/...`). Never expose this stack to an untrusted network.
@@ -479,9 +591,9 @@ requirements. All are handled in the repo; documented here for anyone extending 
 
 | Symptom | Cause & fix |
 |---------|-------------|
-| Brute force never detected (no rule 5710/5712/5763) | `sshd -D -e` logs to **stderr, not syslog**, so `rsyslog` never writes `/var/log/auth.log`. Run `sshd -D` (no `-e`) — see `honeypot/entrypoint.sh`. |
-| Auth events still not ingested after fixing sshd | The agent had **no log source for auth**, and `auth.log` doesn't exist at boot (created lazily), so logcollector's open fails and never re-attaches. Fix: add a `<localfile>` for `/var/log/auth.log` (`honeypot/agent-fim.conf`) **and** `touch` it in the entrypoint before the agent starts. |
-| Rule fires but AR script never runs (execd logs "Executing command", nothing happens) | `wazuh-execd` runs AR scripts with a **minimal PATH**, so `#!/usr/bin/env python3` (needs `env` on PATH) fails, as do bare `iptables` calls. Use an **absolute shebang** (`#!/usr/bin/python3`) and an absolute `/usr/sbin/iptables` — see `scripts/active_defense.py`. |
+| Brute force never detected (no rule 5710/5712/5763) | `sshd -D -e` logs to **stderr, not syslog**, so `rsyslog` never writes `/var/log/auth.log`. Run `sshd -D` (no `-e`) — see `services/honeypot/entrypoint.sh`. |
+| Auth events still not ingested after fixing sshd | The agent had **no log source for auth**, and `auth.log` doesn't exist at boot (created lazily), so logcollector's open fails and never re-attaches. Fix: add a `<localfile>` for `/var/log/auth.log` (`services/honeypot/agent-fim.conf`) **and** `touch` it in the entrypoint before the agent starts. |
+| Rule fires but AR script never runs (execd logs "Executing command", nothing happens) | `wazuh-execd` runs AR scripts with a **minimal PATH**, so `#!/usr/bin/env python3` (needs `env` on PATH) fails, as do bare `iptables` calls. Use an **absolute shebang** (`#!/usr/bin/python3`) and an absolute `/usr/sbin/iptables` — see `src/soar/active_defense.py`. |
 | AR script starts but hangs / does nothing | `sys.stdin.read()` blocks: execd sends **one JSON line but keeps the stdin pipe open**, so `read()` waits for EOF forever. Use `sys.stdin.readline()`. (A manual `printf … \| script` test passes because the pipe closes — masking the bug.) |
-| Manager doesn't dispatch the AR at all | The custom `<command>` must be defined on **both** manager and agent, the executable must resolve on **both** (`docker-compose.yml` mounts it into the manager; the honeypot image bakes it in), and rebuilding the honeypot needs authd `<force>` in `wazuh_manager.conf` or the agent gets stuck on `Duplicate agent name` and never forwards. |
+| Manager doesn't dispatch the AR at all | The custom `<command>` must be defined on **both** manager and agent, the executable must resolve on **both** (`compose/wazuh.yml` mounts it into the manager; the honeypot image bakes it in), and rebuilding the honeypot needs authd `<force>` in `wazuh_manager.conf` or the agent gets stuck on `Duplicate agent name` and never forwards. |
 | Active Response ban kills the attacker's live session | Expected if the ban is inserted (`-I`) above the ESTABLISHED accept rule. The lab **appends** the ban (`-A`) after an `ESTABLISHED,RELATED` accept installed at boot, so live sessions survive and only new connections are dropped. |

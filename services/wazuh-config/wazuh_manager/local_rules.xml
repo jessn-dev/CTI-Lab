@@ -32,3 +32,29 @@
   </rule>
 
 </group>
+
+<!--
+  shelLM honeypot events (forwarded as JSON by the shelLM agent from
+  /var/log/shellm.json). shelLM is a depth-focused, consistency-driven LLM SSH
+  shell; run.sh writes one JSON line per session. IDs use the 100310+ range,
+  distinct from beelzebub's 100300-100302.
+-->
+<group name="shellm,honeypot,">
+
+  <!-- Base: any shelLM event (has honeypot == "shelLM"). Low level. -->
+  <rule id="100310" level="3">
+    <decoded_as>json</decoded_as>
+    <field name="honeypot">^shelLM$</field>
+    <description>shelLM honeypot event.</description>
+    <options>no_full_log</options>
+  </rule>
+
+  <!-- New SSH session: an attacker landed in the shelLM LLM shell. -->
+  <rule id="100311" level="6">
+    <if_sid>100310</if_sid>
+    <field name="event">^session_start$</field>
+    <description>shelLM LLM SSH honeypot: new session from $(srcip).</description>
+    <group>shellm,attack,ssh,</group>
+  </rule>
+
+</group>

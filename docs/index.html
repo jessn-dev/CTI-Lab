@@ -69,8 +69,8 @@
             </p>
 
             <div class="demo-shot">
-                <img src="assets/attack.gif" alt="One ./attack.sh run: the honeypot is compromised, and Wazuh detects, bans, and flags it automatically.">
-                <div class="cap">▶︎ One <code class="tick">./attack.sh</code> run from the real lab — brute-force → foothold → EICAR drop, and Wazuh's automatic response (detection, iptables ban, VirusTotal verdict).</div>
+                <img src="assets/attack.gif" alt="One ./bin/attack.sh run: the honeypot is compromised, and Wazuh detects, bans, and flags it automatically.">
+                <div class="cap">▶︎ One <code class="tick">./bin/attack.sh</code> run from the real lab — brute-force → foothold → EICAR drop, and Wazuh's automatic response (detection, iptables ban, VirusTotal verdict).</div>
             </div>
         </section>
 
@@ -83,7 +83,7 @@
                 <div class="step-body">
                     <h3>Bring the lab up</h3>
                     <p>Starts the Wazuh SIEM + honeypot and waits for the agent to connect. The Manager API comes up on <code class="tick">:55000</code>, the Indexer on <code class="tick">:9200</code>.</p>
-                    <div class="cmd">cp .env.example .env &amp;&amp; ./start_lab.sh</div>
+                    <div class="cmd">cp .env.example .env &amp;&amp; ./bin/start_lab.sh</div>
                 </div>
             </div>
 
@@ -199,9 +199,17 @@
                     <li><strong>Richer intelligence &amp; fewer false positives</strong> — continuous learning surfaces emerging TTPs while filtering benign noise.</li>
                 </ul>
 
+                <div class="callout ok">
+                    <span class="ic">✓</span>
+                    <div><strong>Two of these are already live.</strong> The lab now runs two LLM honeypots beside the static one, both backed by a local model (Ollama) and feeding the same Wazuh SIEM: <strong>beelzebub</strong> for breadth (a multi-protocol honeypot framework with metrics, SSH on port 2323 → rule 100301) and <strong>shelLM</strong> for depth (a consistency-focused LLM SSH shell, port 2224 → rule 100311). shelLM is a stdin/stdout chatbot, so a real <code class="tick">sshd</code> <code class="tick">ForceCommand</code>s each login into it. Between them the lab already has a real SSH honeypot, a <code class="tick">paramiko</code> attack harness, a SIEM ingesting every event, and Python SOAR acting on detections — the foundation for adaptive deception.</div>
+                </div>
+                <div class="callout ok">
+                    <span class="ic">✓</span>
+                    <div><strong>And benchmarked.</strong> The two LLM honeypots were measured head to head on the same model (<code class="tick">llama3.2:3b</code>) over 3 trials, scored on session <em>consistency</em> — the metric that separates them. <strong>shelLM 12/12, beelzebub 9/12</strong>: beelzebub fails the <code class="tick">ls</code>-listing probe every trial (its <code class="tick">ls</code> doesn't show a file it just "wrote"), while shelLM lists it every time. Breadth (multi-protocol, per-command) vs depth (one coherent session), measured — not asserted.</div>
+                </div>
                 <div class="callout info">
                     <span class="ic">◆</span>
-                    <div><strong>This lab is the foundation.</strong> Most of what an AI honeypot needs already exists here: a real SSH honeypot, a <code class="tick">paramiko</code> attack harness, a SIEM ingesting every event, and Python SOAR acting on detections. The next step is to swap the static <code class="tick">sshd</code> for an LLM-driven shell that generates responses per command. The plan uses two tools for two jobs: <strong>beelzebub</strong> for breadth (a multi-protocol honeypot framework with metrics) and <strong>shelLM</strong> for depth (a consistency-focused LLM SSH shell), run side by side and benchmarked in the same SIEM. That turns this from a <em>detection</em> lab into an <em>adaptive-deception</em> one. See <code class="tick">docs/ROADMAP.md</code> for the phased plan.</div>
+                    <div><strong>The longer arc.</strong> The larger vision above — GANs for synthetic environments, reinforcement learning to prolong engagement, federated threat-intel sharing — is where this heads next. See <code class="tick">docs/ROADMAP.md</code> for the phased plan.</div>
                 </div>
             </section>
 
@@ -358,7 +366,7 @@
             <div class="table-wrap"><table>
                 <thead><tr><th>Symptom</th><th>Fix</th></tr></thead>
                 <tbody>
-                    <tr><td><span class="mono">curl: (7) Failed to connect … 55000</span></td><td>Lab isn't up — run <code class="tick">./start_lab.sh</code> and wait for the manager.</td></tr>
+                    <tr><td><span class="mono">curl: (7) Failed to connect … 55000</span></td><td>Lab isn't up — run <code class="tick">./bin/start_lab.sh</code> and wait for the manager.</td></tr>
                     <tr><td><span class="mono">SSL certificate problem</span></td><td>Self-signed TLS — add <code class="tick">-k</code> / <code class="tick">verify=False</code> / <code class="tick">rejectUnauthorized:false</code>.</td></tr>
                     <tr><td><span class="mono">401 "Token expired"</span></td><td>Tokens live ~15 min — re-run the authenticate call and reuse the new token.</td></tr>
                     <tr><td><span class="mono">error: 1701 "Agent does not exist"</span></td><td>Bad agent ID in <code class="tick">agents_list</code>; list valid IDs with <code class="tick">GET /agents</code>.</td></tr>

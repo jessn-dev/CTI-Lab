@@ -1,0 +1,31 @@
+# ==============================================================================
+# Static Linux SSH honeypot. Real Ubuntu box (bash, useradd, rsyslog/auth.log)
+# exposing a weak root:toor login on 2222, shipping logs to Wazuh via a baked-in
+# agent. FIM watches /tmp, /home, /root for dropped payloads; the Active
+# Response script bans brute-forcers.
+#
+#   run this: docker compose -f compose/honeypot.yml up -d --build
+#
+# Build context is the repo root (..) so honeypot/Dockerfile can COPY src/soar/.
+# ==============================================================================
+name: threat-intelligence-lab
+
+services:
+  linux-honeypot:
+    build:
+      context: ..
+      dockerfile: services/honeypot/Dockerfile
+    image: threat-lab/linux-honeypot:latest
+    container_name: linux-honeypot
+    hostname: linux-honeypot
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN          # lets the Active Response script run iptables
+    ports:
+      - "2222:22"          # SSH honeypot target for the brute-force sim
+    environment:
+      - WAZUH_MANAGER=wazuh.manager
+    # No depends_on: the entrypoint already waits for wazuh.manager:1515 before
+    # enrolling, so this file runs standalone. Startup order is sequenced by
+    # start_lab.sh (SIEM first). depends_on would break a standalone run since
+    # wazuh.manager lives in compose/wazuh.yml.

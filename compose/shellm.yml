@@ -1,0 +1,30 @@
+# ==============================================================================
+# B2 — shelLM LLM SSH honeypot (depth: session consistency).
+#
+#   run this: docker compose -f compose/shellm.yml up -d --build
+#
+# shelLM is a stdin/stdout LLM shell chatbot; a real OpenSSH server ForceCommands
+# every login into it (see shelLM/run.sh). Backed by the native Ollama on the
+# host. SSH honeypot on host port 2224 (static 2222, beelzebub 2323). `name:`
+# pins the shared project so the baked agent reaches wazuh.manager by hostname.
+# ==============================================================================
+name: threat-intelligence-lab
+
+services:
+  shellm:
+    build:
+      context: ..
+      dockerfile: services/shelLM/Dockerfile
+    image: threat-lab/shellm:latest
+    container_name: shellm
+    hostname: shellm
+    restart: unless-stopped
+    ports:
+      - "2224:22"                # LLM SSH honeypot
+    environment:
+      - WAZUH_MANAGER=wazuh.manager
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - SHELLM_MODEL=llama3.2:3b        # same model as beelzebub (fair A/B later)
+      - SHELLM_PERSONALITY=Eman_v1      # a Linux-box persona shipped by shelLM
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

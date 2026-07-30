@@ -2,15 +2,15 @@
 # ==============================================================================
 # Import the custom "CTI · Threat Overview" dashboard into the Wazuh dashboard.
 # Saved objects (6 visualizations + 1 dashboard) live in
-#   config/wazuh_dashboard/cti-dashboard.ndjson
+#   services/wazuh-config/wazuh_dashboard/cti-dashboard.ndjson
 # Re-runnable — overwrite=true replaces existing copies.
 # ==============================================================================
 set -euo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."   # scripts live in bin/; run from the repo root
 
 D="${WAZUH_DASHBOARD_URL:-https://localhost:8443}"
 A="${WAZUH_DASHBOARD_AUTH:-admin:SecretPassword}"
-NDJSON="config/wazuh_dashboard/cti-dashboard.ndjson"
+NDJSON="services/wazuh-config/wazuh_dashboard/cti-dashboard.ndjson"
 
 [ -f "$NDJSON" ] || { echo "[!] $NDJSON not found."; exit 1; }
 

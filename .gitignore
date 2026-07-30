@@ -19,11 +19,15 @@ windows_data/
 logs/
 *.log
 
-# Generated Wazuh TLS certificates (created by generate-certs.yml)
-config/wazuh_indexer_ssl_certs/
+# Generated Wazuh TLS certificates (created by compose/generate-certs.yml)
+services/wazuh-config/wazuh_indexer_ssl_certs/
 
 # AI threat reports (may contain attacker IOCs)
 reports/
 
 # Reference material pulled during setup
 _ref/
+
+# Local planning / tracking docs (not part of the repo)
+*-tracking.md
+B1-tracking.md

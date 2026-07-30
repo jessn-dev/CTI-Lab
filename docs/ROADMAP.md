@@ -5,7 +5,7 @@ Tracked so we don't lose it. Newest intent at top.
 ## Deferred — Pluggable LLM backend (Phase A)
 **Status: ON HOLD (deliberate).** Decided 2026-07-27.
 
-`scripts/threat_report.py` currently ships **Gemini only**. The code is already
+`src/soar/threat_report.py` currently ships **Gemini only**. The code is already
 shaped for more backends — `analyze()` switches on `LLM_PROVIDER`, and
 `analyze_gemini()` is self-contained — but we are **not** building the other
 backends yet.
@@ -30,6 +30,11 @@ backend; it can be skipped for `ollama`.
 - **Phase B1 — beelzebub LLM honeypot.** LLM-driven SSH shell (local Ollama), in
   its own compose file, with a sidecar Wazuh agent forwarding events as rule
   100301. Core lab unaffected. See README §7c.
+- **Phase B2 (Part 1) — shelLM LLM honeypot.** Consistency-focused LLM SSH shell
+  (Stratosphere IPS) on port 2224, exposed via a real `sshd` `ForceCommand` into
+  the shelLM chatbot, local Ollama, baked Wazuh agent forwarding sessions as rule
+  100311. Core lab unaffected. See README §7d. **Part 2 (the shelLM-vs-beelzebub
+  benchmark) is deferred** — build after both are stable.
 
 ## Phase B — AI-generated honeypots (the big vision)
 
@@ -86,10 +91,16 @@ different job (not two copies of the same SSH honeypot):
 - Fastest win: multi-protocol coverage and metrics for little code.
 
 **B2 — shelLM (depth) + the benchmark.**
-- Run shelLM as a second SSH honeypot on its own port (e.g. 2223), beside
-  beelzebub's SSH on 2222.
-- Both feed the same Wazuh SIEM. Compare which keeps an attacker engaged longer
-  and which stays consistent across a session (the metric that actually matters).
+- **Part 1 (DONE).** shelLM runs as a third SSH honeypot on port **2224**, beside
+  the static honeypot (2222) and beelzebub (2323). It's a stdin/stdout LLM shell
+  chatbot, so a real `sshd` `ForceCommand`s every login into it. Sessions feed the
+  same Wazuh SIEM as rule 100311. See README §7d.
+- **Part 2 (DONE).** Benchmark shelLM vs beelzebub: same commands, same model
+  (`llama3.2:3b`), scored on session consistency (`src/redteam/benchmark.py`,
+  `./bin/benchmark.sh`). Result over 3 trials: **shelLM 12/12, beelzebub 9/12** —
+  beelzebub fails the `ls`-listing probe every trial (its `ls` doesn't reflect a
+  file it just wrote), shelLM passes it every trial. Breadth vs depth, measured.
+  See README §7d.
 - This A/B is the headline: two LLM honeypot strategies, one SIEM, measured. Few
   projects do it.
 

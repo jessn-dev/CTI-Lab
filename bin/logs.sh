@@ -2,21 +2,21 @@
 # ==============================================================================
 # View the SIEM from a terminal — no dashboard needed.
 #
-#   ./logs.sh            live alert stream (human-readable text)
-#   ./logs.sh json       live alert stream, key fields only (level/id/srcip)
-#   ./logs.sh ar         Active-Response bans (on the honeypot)
-#   ./logs.sh vt         VirusTotal integration log (on the manager)
-#   ./logs.sh auth       honeypot SSH auth.log (raw login attempts)
-#   ./logs.sh agents     enrolled agents + connection status (snapshot)
+#   ./bin/logs.sh            live alert stream (human-readable text)
+#   ./bin/logs.sh json       live alert stream, key fields only (level/id/srcip)
+#   ./bin/logs.sh ar         Active-Response bans (on the honeypot)
+#   ./bin/logs.sh vt         VirusTotal integration log (on the manager)
+#   ./bin/logs.sh auth       honeypot SSH auth.log (raw login attempts)
+#   ./bin/logs.sh agents     enrolled agents + connection status (snapshot)
 # ==============================================================================
 set -euo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."   # scripts live in bin/; run from the repo root
 
 MODE="${1:-alerts}"
 
 need() {
     docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^$1$" || {
-        echo "[!] Container '$1' isn't running. Start the lab: ./start_lab.sh"
+        echo "[!] Container '$1' isn't running. Start the lab: ./bin/start_lab.sh"
         exit 1
     }
 }

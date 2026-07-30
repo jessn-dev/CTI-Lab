@@ -6,14 +6,14 @@
 # Pass-through args are forwarded (e.g. --input path/to/alerts.json).
 # ==============================================================================
 set -e
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."   # scripts live in bin/; run from the repo root
 
 if [ ! -d venv ]; then
-    echo "[!] Python venv not found. Run ./start_lab.sh first."
+    echo "[!] Python venv not found. Run ./bin/start_lab.sh first."
     exit 1
 fi
 
 # shellcheck disable=SC1091
 source venv/bin/activate
-python3 scripts/threat_report.py "$@"
+python3 src/soar/threat_report.py "$@"
 deactivate

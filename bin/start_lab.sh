@@ -5,7 +5,7 @@
 # 4. run the Python adversary simulation once the honeypot agent is connected
 # ==============================================================================
 set -euo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."   # scripts live in bin/; run from the repo root
 
 # ---- pick the right compose command (v2 plugin vs legacy v1) ----------------
 if docker compose version >/dev/null 2>&1; then
@@ -22,9 +22,9 @@ echo "  Booting Threat Intelligence Lab Infrastructure"
 echo "===================================================="
 
 # ---- [1/5] TLS certificates -------------------------------------------------
-if [ ! -f config/wazuh_indexer_ssl_certs/root-ca.pem ]; then
+if [ ! -f services/wazuh-config/wazuh_indexer_ssl_certs/root-ca.pem ]; then
     echo "[1/5] Generating Wazuh TLS certificates..."
-    $DC -f generate-certs.yml run --rm generator
+    $DC -f compose/generate-certs.yml run --rm generator
 else
     echo "[1/5] TLS certificates already present, skipping."
 fi
@@ -41,8 +41,12 @@ else
 fi
 
 # ---- [3/5] Bring up SIEM + honeypot -----------------------------------------
+# Core lab only (SIEM + static honeypot). The LLM honeypots (beelzebub, shelLM)
+# need the native Ollama running, so they stay opt-in:
+#   docker compose -f compose/beelzebub.yml up -d
+#   docker compose -f compose/shellm.yml   up -d --build
 echo "[3/5] Starting Wazuh SIEM + honeypot (this builds the honeypot image)..."
-$DC up -d --build
+$DC -f compose/wazuh.yml -f compose/honeypot.yml up -d --build
 
 echo "      Waiting for the indexer/manager to initialise (up to ~90s)..."
 sleep 60
@@ -77,7 +81,7 @@ deactivate
 
 # Best-effort: import the custom "CTI · Threat Overview" dashboard once the
 # dashboard API is ready. Runs in the background so it never blocks startup.
-( ./import-dashboard.sh >/dev/null 2>&1 & ) 2>/dev/null || true
+( bin/import-dashboard.sh >/dev/null 2>&1 & ) 2>/dev/null || true
 
 echo ""
 echo "===================================================="
@@ -94,7 +98,7 @@ echo "  2. Go to  Threat Hunting  →  Events / Security Alerts,"
 echo "     and leave it open."
 echo "  3. In another terminal, launch the adversary simulation:"
 echo ""
-echo "         ./attack.sh"
+echo "         ./bin/attack.sh"
 echo ""
 echo "  4. Watch the kill chain appear in real time:"
 echo "       - SSH brute force  (rule 5763, level 10)"
@@ -102,9 +106,9 @@ echo "       - Active Response ban of the attacker IP"
 echo "       - FIM 'new file' on /tmp/eicar.com.txt + VirusTotal verdict"
 echo ""
 echo "  Custom dashboard 'CTI · Threat Overview' auto-imports once the"
-echo "  dashboard is ready (or run ./import-dashboard.sh). Find it under"
-echo "  ☰ menu → Dashboards. Terminal-only? Use ./logs.sh"
+echo "  dashboard is ready (or run ./bin/import-dashboard.sh). Find it under"
+echo "  ☰ menu → Dashboards. Terminal-only? Use ./bin/logs.sh"
 echo ""
-echo "  Generate an AI threat report afterwards:  ./report.sh"
-echo "  Stop everything:                          ./stop_lab.sh"
+echo "  Generate an AI threat report afterwards:  ./bin/report.sh"
+echo "  Stop everything:                          ./bin/stop_lab.sh"
 echo "===================================================="

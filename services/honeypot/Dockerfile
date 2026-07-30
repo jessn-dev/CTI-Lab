@@ -46,14 +46,14 @@ RUN mkdir -p /var/run/sshd \
 # --- Custom Active Response executable (triggered by the manager) -------------
 # Build context is the project root (see docker-compose.yml), so paths are
 # relative to it.
-COPY --chmod=0750 scripts/active_defense.py /var/ossec/active-response/bin/active_defense.py
+COPY --chmod=0750 src/soar/active_defense.py /var/ossec/active-response/bin/active_defense.py
 RUN chown root:wazuh /var/ossec/active-response/bin/active_defense.py
 
 # --- Extra File Integrity Monitoring on attacker drop zones ------------------
-COPY honeypot/agent-fim.conf /tmp/agent-fim.conf
+COPY services/honeypot/agent-fim.conf /tmp/agent-fim.conf
 RUN cat /tmp/agent-fim.conf >> /var/ossec/etc/ossec.conf && rm /tmp/agent-fim.conf
 
-COPY --chmod=0755 honeypot/entrypoint.sh /entrypoint.sh
+COPY --chmod=0755 services/honeypot/entrypoint.sh /entrypoint.sh
 
 EXPOSE 22
 ENTRYPOINT ["/entrypoint.sh"]

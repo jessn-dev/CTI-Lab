@@ -2,26 +2,23 @@ ol# Roadmap / Deferred Work
 
 Tracked so we don't lose it. Newest intent at top.
 
-## Deferred — Pluggable LLM backend (Phase A)
-**Status: ON HOLD (deliberate).** Decided 2026-07-27.
+## Pluggable LLM backend (Phase A) — DONE (2026-07-31)
+`src/soar/threat_report.py` now supports three backends via `LLM_PROVIDER`
+(`gemini` | `ollama` | `claude`); the prompt + event extraction are shared, each
+transport is one function:
+- **`analyze_gemini()`** — free tier (default). Sliding-window rate-limit + 429
+  retry + PII egress guardrail.
+- **`analyze_ollama()`** — local model (Ollama), fully offline, zero cost, no data
+  leaves the host, so `REDACT_PII` is optional. `OLLAMA_BASE_URL` defaults to
+  `http://localhost:11434` (the analyst runs on the host, not in Docker).
+  *Tested live with `llama3.2:3b`.*
+- **`analyze_claude()`** — Anthropic Claude (`CLAUDE_MODEL` default `claude-opus-5`;
+  set `claude-haiku-4-5` for cheap/fast). Raw Messages API (no new dependency),
+  429/529/5xx retry. Keep `REDACT_PII` on. *Written, not yet run live (needs
+  `ANTHROPIC_API_KEY`).*
 
-`src/soar/threat_report.py` currently ships **Gemini only**. The code is already
-shaped for more backends — `analyze()` switches on `LLM_PROVIDER`, and
-`analyze_gemini()` is self-contained — but we are **not** building the other
-backends yet.
-
-When we pick this back up, add:
-- **`analyze_ollama()`** — local model (Ollama + Llama/Mistral), fully offline,
-  zero cost, no data leaves the host. This is the privacy-first default we
-  discussed; with a local backend, `REDACT_PII` can be relaxed since nothing is
-  sent to a third party. On macOS run Ollama native (Metal GPU) and point the
-  script at `http://host.docker.internal:11434`; Docker-Ollama on Mac is CPU-only.
-- **`analyze_claude()`** — Anthropic Claude (Haiku 4.5 for cheap/fast, Opus 5
-  for best quality). Batch API halves cost. Highest-quality reports.
-
-Selection stays via `LLM_PROVIDER` (`gemini` | `ollama` | `claude`). Keep the
-egress guardrail (`sanitize_events` / `restore_tokens`) in front of any remote
-backend; it can be skipped for `ollama`.
+The egress guardrail (`sanitize_events` / `restore_tokens`) stays in front of the
+remote backends; it can be skipped for `ollama`. See README §6b.
 
 ## Done
 - Phase A analyst (Gemini backend) with rate-limit + PII-egress guardrails.

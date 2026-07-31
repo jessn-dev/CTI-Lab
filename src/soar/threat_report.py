@@ -7,9 +7,11 @@ Active Response bans), hands them to an LLM, and writes a structured
 MITRE ATT&CK threat report. Runs offline on logs - it is NOT in the attack
 path, so there is no latency or prompt-injection risk.
 
-Provider is pluggable via LLM_PROVIDER (default: gemini). The analysis prompt
-and event extraction are provider-agnostic; only the transport differs, so
-swapping to a local model or Claude later is a single function.
+Provider is pluggable via LLM_PROVIDER (gemini | ollama | claude | groq). The
+analysis prompt and event extraction are provider-agnostic; only the transport
+differs, so each backend is a single function. gemini = free tier; ollama =
+local/offline/private (PII guardrail optional); claude = highest quality;
+groq = free tier, very fast (OpenAI-compatible, open models).
 
 Input (first that works):
   --input <file>                     explicit alerts.json (newline-delimited)
@@ -19,12 +21,30 @@ Output:
   reports/threat_report_<UTC timestamp>.md
 
 Config (via .env / environment):
-  LLM_PROVIDER      default "gemini"
+  LLM_PROVIDER      default "gemini"   (gemini | ollama | claude | groq)
+  REDACT_PII        default true       pseudonymise IPs/users/hashes before egress
+
+  # gemini (free tier)
   GEMINI_API_KEY    required for gemini (free key: https://aistudio.google.com)
   GEMINI_MODEL      default "gemini-2.5-flash"
   GEMINI_MAX_RPM    default 10   sliding-window req/min cap (free tier ~15)
   GEMINI_MAX_RETRIES default 4   429/5xx retries with exponential backoff
-  REDACT_PII        default true pseudonymise IPs/users/hashes before egress
+
+  # ollama (local, offline, private - REDACT_PII optional)
+  OLLAMA_BASE_URL   default "http://localhost:11434"
+  OLLAMA_MODEL      default "llama3.2:3b"
+
+  # claude (Anthropic, highest quality - keep REDACT_PII on)
+  ANTHROPIC_API_KEY required for claude (https://console.anthropic.com)
+  CLAUDE_MODEL      default "claude-opus-5"  (set claude-haiku-4-5 for cheap/fast)
+  CLAUDE_MAX_TOKENS default 8192
+  CLAUDE_MAX_RETRIES default 4
+
+  # groq (free tier, very fast, OpenAI-compatible - keep REDACT_PII on)
+  GROQ_API_KEY      required for groq (free key: https://console.groq.com)
+  GROQ_MODEL        default "llama-3.3-70b-versatile"
+  GROQ_MAX_TOKENS   default 8192
+  GROQ_MAX_RETRIES  default 4
 """
 
 import os
@@ -51,9 +71,14 @@ except ImportError:
 
 ALERTS_IN_MANAGER = "/var/ossec/logs/alerts/alerts.json"
 MANAGER_CONTAINER = "wazuh.manager"
-MAX_EVENTS = 50  # cap what we send so the prompt stays small/cheap
+# Cap what we send so the prompt stays small/cheap. Lower it (ANALYST_MAX_EVENTS)
+# to fit a provider's per-request token limit - e.g. Groq's free tier is 12k TPM.
+MAX_EVENTS = int(os.environ.get("ANALYST_MAX_EVENTS", "50"))
 
-REPORT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "reports")
+# repo root is two dirs up from this file (src/soar/threat_report.py).
+REPORT_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "reports")
 RATE_STATE = os.path.join(REPORT_DIR, ".rate_state.json")
 
 
@@ -125,7 +150,10 @@ def extract_events(raw):
         NOISE = {"sca", "rootcheck", "policy_monitoring", "syscollector"}
         SIGNAL = {"authentication_failed", "authentication_failures",
                   "authentication_success", "sshd", "syscheck",
-                  "attacks", "active_response"}
+                  "attacks", "active_response",
+                  # Phase C adaptive engagement: attacker tier + tripwire decisions
+                  # (the per-command category rules stay out to avoid bloat).
+                  "engagement"}
         if any(g in NOISE for g in groups):
             continue
         interesting = any(g in SIGNAL for g in groups) or level >= 10
@@ -365,13 +393,192 @@ def analyze_gemini(prompt):
     sys.exit(1)
 
 
+def analyze_ollama(prompt):
+    """Local model via Ollama (offline, free, private). Nothing leaves the host,
+    so the PII egress guardrail is optional here - set REDACT_PII=false to send
+    raw IOCs to the local model. threat_report runs on the host, so the default
+    endpoint is localhost (not host.docker.internal)."""
+    base = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
+    model = os.environ.get("OLLAMA_MODEL", "llama3.2:3b")
+    url = f"{base}/api/chat"
+    body = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "stream": False,
+        "options": {"temperature": 0.2},
+    }
+    print(f"[*] Sending {len(prompt)} chars to Ollama ({model}) at {base}...")
+    try:
+        resp = requests.post(url, json=body, timeout=300)  # local model is slow
+    except requests.RequestException as exc:
+        print(f"[!] cannot reach Ollama at {base}: {exc}\n"
+              "    Is `ollama serve` running and the model pulled "
+              f"(`ollama pull {model}`)?")
+        sys.exit(1)
+    if resp.status_code != 200:
+        print(f"[!] Ollama HTTP {resp.status_code}: {resp.text[:300]}")
+        sys.exit(1)
+    text = (resp.json().get("message", {}).get("content") or "").strip()
+    if not text:
+        print("[!] empty Ollama response.")
+        sys.exit(1)
+    return text
+
+
+def analyze_claude(prompt):
+    """Anthropic Claude via the Messages API (raw HTTP, matching the Gemini path
+    so no new dependency). Highest-quality reports. The PII egress guardrail
+    (sanitize_events) stays in front of this remote backend - keep REDACT_PII on.
+
+    CLAUDE_MODEL defaults to the most capable model; set it to a cheaper/faster
+    one (e.g. claude-haiku-4-5) for high-volume runs."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key or api_key == "YOUR_ANTHROPIC_KEY_HERE":
+        print("[!] ANTHROPIC_API_KEY not set. Get a key at "
+              "https://console.anthropic.com and put it in .env")
+        sys.exit(1)
+
+    model = os.environ.get("CLAUDE_MODEL", "claude-opus-5")
+    max_tokens = _env_int("CLAUDE_MAX_TOKENS", 8192)
+    max_retries = _env_int("CLAUDE_MAX_RETRIES", 4)
+    url = "https://api.anthropic.com/v1/messages"
+    headers = {
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+    }
+    body = {
+        "model": model,
+        "max_tokens": max_tokens,
+        "temperature": 0.2,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+
+    print(f"[*] Sending {len(prompt)} chars to Claude ({model})...")
+    for attempt in range(1, max_retries + 1):
+        try:
+            resp = requests.post(url, headers=headers, json=body, timeout=120)
+        except requests.RequestException as exc:
+            print(f"[!] network error contacting Claude: {exc}")
+            sys.exit(1)
+
+        # 429 (rate limit) and 529 (overloaded) are retryable with backoff.
+        if resp.status_code in (429, 529) or resp.status_code >= 500:
+            if attempt >= max_retries:
+                print(f"[!] Claude {resp.status_code} after {max_retries} tries; giving up.")
+                sys.exit(1)
+            retry_after = resp.headers.get("retry-after")
+            delay = int(retry_after) if (retry_after or "").isdigit() else min(60, 2 ** attempt)
+            print(f"[*] Claude {resp.status_code}; backing off {delay}s "
+                  f"(retry {attempt}/{max_retries - 1})...")
+            time.sleep(delay)
+            continue
+        if resp.status_code in (400, 401, 403):
+            print(f"[!] Claude auth/request error {resp.status_code}: {resp.text[:300]}")
+            sys.exit(1)
+        if resp.status_code != 200:
+            print(f"[!] Claude HTTP {resp.status_code}: {resp.text[:300]}")
+            sys.exit(1)
+
+        data = resp.json()
+        # content is a list of blocks; join the text blocks (ignore any others).
+        text = "".join(b.get("text", "") for b in data.get("content", [])
+                       if b.get("type") == "text").strip()
+        if data.get("stop_reason") == "max_tokens":
+            print("[*] Claude hit max_tokens; report may be truncated "
+                  "(raise CLAUDE_MAX_TOKENS).")
+        if not text:
+            print(f"[!] empty Claude response (stop_reason={data.get('stop_reason')}).")
+            sys.exit(1)
+        return text
+
+    print("[!] exhausted retries contacting Claude.")
+    sys.exit(1)
+
+
+def analyze_groq(prompt):
+    """Groq (OpenAI-compatible API) - free tier, very fast inference on open
+    models (Llama etc). Remote backend, so keep REDACT_PII on. Matches the
+    raw-HTTP style of the other backends; no new dependency."""
+    api_key = os.environ.get("GROQ_API_KEY", "")
+    if not api_key or api_key == "YOUR_GROQ_KEY_HERE":
+        print("[!] GROQ_API_KEY not set. Get a free key at "
+              "https://console.groq.com and put it in .env")
+        sys.exit(1)
+
+    model = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+    max_tokens = _env_int("GROQ_MAX_TOKENS", 8192)
+    max_retries = _env_int("GROQ_MAX_RETRIES", 4)
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    body = {
+        "model": model,
+        "max_tokens": max_tokens,
+        "temperature": 0.2,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+
+    print(f"[*] Sending {len(prompt)} chars to Groq ({model})...")
+    for attempt in range(1, max_retries + 1):
+        try:
+            resp = requests.post(url, headers=headers, json=body, timeout=120)
+        except requests.RequestException as exc:
+            print(f"[!] network error contacting Groq: {exc}")
+            sys.exit(1)
+
+        if resp.status_code == 429 or resp.status_code >= 500:
+            if attempt >= max_retries:
+                print(f"[!] Groq {resp.status_code} after {max_retries} tries; giving up.")
+                sys.exit(1)
+            retry_after = resp.headers.get("retry-after")
+            delay = int(float(retry_after)) if (retry_after or "").replace(".", "", 1).isdigit() \
+                else min(60, 2 ** attempt)
+            print(f"[*] Groq {resp.status_code}; backing off {delay}s "
+                  f"(retry {attempt}/{max_retries - 1})...")
+            time.sleep(delay)
+            continue
+        if resp.status_code in (400, 401, 403):
+            print(f"[!] Groq auth/request error {resp.status_code}: {resp.text[:300]}")
+            sys.exit(1)
+        if resp.status_code != 200:
+            print(f"[!] Groq HTTP {resp.status_code}: {resp.text[:300]}")
+            sys.exit(1)
+
+        try:
+            choice = resp.json()["choices"][0]
+            text = (choice.get("message", {}).get("content") or "").strip()
+        except (KeyError, IndexError):
+            print(f"[!] unexpected Groq response shape: {resp.text[:300]}")
+            sys.exit(1)
+        if choice.get("finish_reason") == "length":
+            print("[*] Groq hit the token limit; report may be truncated "
+                  "(raise GROQ_MAX_TOKENS).")
+        if not text:
+            print(f"[!] empty Groq response (finish_reason={choice.get('finish_reason')}).")
+            sys.exit(1)
+        return text
+
+    print("[!] exhausted retries contacting Groq.")
+    sys.exit(1)
+
+
 def analyze(prompt):
     provider = os.environ.get("LLM_PROVIDER", "gemini").lower()
-    if provider == "gemini":
-        return analyze_gemini(prompt)
-    # Hooks for later: "ollama", "claude". Kept intentionally simple.
-    print(f"[!] unsupported LLM_PROVIDER '{provider}'. Use 'gemini'.")
-    sys.exit(1)
+    dispatch = {
+        "gemini": analyze_gemini,
+        "ollama": analyze_ollama,
+        "claude": analyze_claude,
+        "groq": analyze_groq,
+    }
+    fn = dispatch.get(provider)
+    if fn is None:
+        print(f"[!] unsupported LLM_PROVIDER '{provider}'. "
+              "Use 'gemini', 'ollama', 'claude', or 'groq'.")
+        sys.exit(1)
+    return fn(prompt)
 
 
 # --------------------------------------------------------------------------

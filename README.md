@@ -267,11 +267,24 @@ Output lands in `reports/threat_report_<timestamp>.md`.
   *across runs* keeps you under the free-tier quota, plus 429/5xx retry with
   exponential backoff (`GEMINI_MAX_RETRIES`). You can't accidentally blow the cap.
 
-**Backend:** Gemini only for now (`LLM_PROVIDER=gemini`, model `GEMINI_MODEL`,
-default `gemini-2.5-flash` — it has its own free-tier daily quota; `gemini-2.0-flash`
-exhausts quickly). Local/Claude backends are **deliberately deferred** — see
-[`docs/ROADMAP.md`](docs/ROADMAP.md). A local model (Ollama) would remove the
-third-party egress entirely.
+**Backend (pluggable via `LLM_PROVIDER`):**
+- **`gemini`** (default) — free tier, `GEMINI_MODEL` default `gemini-2.5-flash`.
+- **`ollama`** — a local model (offline, free, private; nothing leaves the host,
+  so `REDACT_PII` is optional). `OLLAMA_BASE_URL` default `http://localhost:11434`,
+  `OLLAMA_MODEL` default `llama3.2:3b`. The prompt + guardrails are shared.
+- **`claude`** — Anthropic Claude for the highest-quality reports. `ANTHROPIC_API_KEY`
+  required; `CLAUDE_MODEL` default `claude-opus-5` (set `claude-haiku-4-5` for
+  cheap/fast). Keep `REDACT_PII` on for this remote backend.
+- **`groq`** — free tier, very fast (OpenAI-compatible, open models). `GROQ_API_KEY`
+  required; `GROQ_MODEL` default `llama-3.3-70b-versatile`. Keep `REDACT_PII` on.
+
+```bash
+LLM_PROVIDER=ollama ./bin/report.sh      # fully offline, no egress
+LLM_PROVIDER=groq   ./bin/report.sh      # free + fast, needs GROQ_API_KEY
+LLM_PROVIDER=claude ./bin/report.sh      # needs ANTHROPIC_API_KEY
+```
+The PII egress guardrail (`sanitize_events`/`restore_tokens`) sits in front of the
+remote backends and can be skipped for `ollama`.
 
 <a name="attack"></a>
 ## 6c. Attack it yourself (manual)
@@ -386,7 +399,7 @@ quick map of what each one does and when to run it.
 | `active_defense.py` | Active Response | Runs on the honeypot agent when Wazuh fires the brute-force rule. Reads the alert JSON from **stdin (`readline`)**, extracts `srcip`, and **appends** an `iptables` DROP (absolute paths — `execd` has a minimal `PATH`). |
 | `engage.py` | Active Response (Phase C) | On the SKILLED tier (rule 100401), plants decoy lures (fake `id_rsa`/`backup_db.sql`/`credentials.txt`) and **holds** the ban to harvest TTPs. Reading a lure trips the tripwire (100402), which bans the srcip. |
 | `malware_capture.py` | VirusTotal integration | Runs on the manager on a FIM new-file alert. Pulls the **SHA-256 straight from the alert** and queries VirusTotal via stdlib `urllib` (no deps on the manager image). |
-| `threat_report.py` | AI analyst (Phase A) | Offline: reads Wazuh detections, **pseudonymises IOCs before egress**, applies a sliding-window **rate-limit guardrail**, and asks Gemini for a MITRE ATT&CK report. Never in the attack path. |
+| `threat_report.py` | AI analyst (Phase A) | Offline: reads Wazuh detections, **pseudonymises IOCs before egress**, applies a sliding-window **rate-limit guardrail**, and asks an LLM (Gemini / Ollama / Claude via `LLM_PROVIDER`) for a MITRE ATT&CK report. Never in the attack path. |
 
 ### Honeypot image (`services/honeypot/`)
 | File | What it does |

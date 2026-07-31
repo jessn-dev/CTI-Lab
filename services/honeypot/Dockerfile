@@ -28,7 +28,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # the kernel audit netlink inside a container). We configure it here but only
 # activate the preload at runtime (entrypoint), so build-step commands aren't
 # logged. One line per command -> /var/log/snoopy.log -> Wazuh reads it.
-RUN printf '\nmessage_format = "snoopy: user=%%{username} uid=%%{uid} tty=%%{tty} cwd=%%{cwd} cmd=%%{cmdline}"\noutput = file:/var/log/snoopy.log\n' \
+# cli=%{env:SSH_CLIENT} captures the attacker's source IP (sshd sets SSH_CLIENT in
+# the session env, even for non-interactive exec) so command events carry srcip -
+# used by the tier correlation and by the tripwire-driven ban (Phase C5).
+RUN printf '\nmessage_format = "snoopy: user=%%{username} uid=%%{uid} tty=%%{tty} cwd=%%{cwd} cli=%%{env:SSH_CLIENT} cmd=%%{cmdline}"\noutput = file:/var/log/snoopy.log\n' \
         >> /etc/snoopy.ini
 
 # Install the Wazuh agent (matches the 4.8.0 manager).
@@ -57,7 +60,9 @@ RUN mkdir -p /var/run/sshd \
 # Build context is the project root (see docker-compose.yml), so paths are
 # relative to it.
 COPY --chmod=0750 src/soar/active_defense.py /var/ossec/active-response/bin/active_defense.py
-RUN chown root:wazuh /var/ossec/active-response/bin/active_defense.py
+COPY --chmod=0750 src/soar/engage.py /var/ossec/active-response/bin/engage.py
+RUN chown root:wazuh /var/ossec/active-response/bin/active_defense.py \
+                     /var/ossec/active-response/bin/engage.py
 
 # --- Extra File Integrity Monitoring on attacker drop zones ------------------
 COPY services/honeypot/agent-fim.conf /tmp/agent-fim.conf

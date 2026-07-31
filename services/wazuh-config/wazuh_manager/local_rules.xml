@@ -74,6 +74,16 @@
     <options>no_full_log</options>
   </rule>
 
+  <!-- Phase C4 TRIPWIRE: a command references a planted lure (see engage.py).
+       Checked before the generic category rules so it wins on a lure hit. This
+       is the loudest signal in the lab - the attacker took the bait. -->
+  <rule id="100402" level="13">
+    <if_sid>100410</if_sid>
+    <field name="command" type="pcre2">(?i)(/root/\.ssh/id_rsa|/root/backup_db\.sql|/root/credentials\.txt)</field>
+    <description>TRIPWIRE: attacker accessed a planted lure - $(command)</description>
+    <group>engagement,tripwire,attack,credential_access,</group>
+  </rule>
+
   <!-- Recon / discovery: enumerating the host, users, network. -->
   <rule id="100411" level="5">
     <if_sid>100410</if_sid>
@@ -87,7 +97,7 @@
     <if_sid>100410</if_sid>
     <field name="command" type="pcre2">(?i)(cat|less|more|head|tail)\s+.*(shadow|id_rsa|\.ssh|credentials|\.aws|\.env|backup.*\.sql)</field>
     <description>Honeypot credential access: $(command)</description>
-    <group>attack,credential_access,</group>
+    <group>attack,credential_access,deep_attack,</group>
   </rule>
 
   <!-- Ingress tool transfer: pulling payloads onto the box. -->
@@ -95,7 +105,7 @@
     <if_sid>100410</if_sid>
     <field name="command" type="pcre2">(?i)\b(wget|curl|scp|tftp|nc|ncat|socat)\b</field>
     <description>Honeypot ingress/tool transfer: $(command)</description>
-    <group>attack,command_control,</group>
+    <group>attack,command_control,deep_attack,</group>
   </rule>
 
   <!-- Persistence: backdoor accounts, cron, keys, services. -->
@@ -103,7 +113,7 @@
     <if_sid>100410</if_sid>
     <field name="command" type="pcre2">(?i)(useradd|adduser|usermod|chpasswd|crontab|authorized_keys|systemctl\s+enable|update-rc\.d)</field>
     <description>Honeypot persistence attempt: $(command)</description>
-    <group>attack,persistence,</group>
+    <group>attack,persistence,deep_attack,</group>
   </rule>
 
   <!-- Defense evasion: wiping logs / history. -->
@@ -111,7 +121,37 @@
     <if_sid>100410</if_sid>
     <field name="command" type="pcre2">(?i)(history\s+-c|shred|rm\s+-rf\s+/var/log|:\s*>\s*/var/log|&gt;\s*/var/log/auth\.log|unset\s+HISTFILE)</field>
     <description>Honeypot defense evasion (log/history wipe): $(command)</description>
-    <group>attack,defense_evasion,</group>
+    <group>attack,defense_evasion,deep_attack,</group>
+  </rule>
+
+</group>
+
+<!--
+  Phase C2 — attacker sophistication tiers (native Wazuh correlation).
+  Fold the per-command category hits into tiers by frequency within a window.
+  Command events carry no srcip (snoopy is exec-level), so we can't correlate on
+  <same_source_ip/>. Instead we key on honeypot-specific groups: recon (100411)
+  and "deep_attack" (100412-100415, tagged), which the LLM honeypots do NOT emit,
+  so no cross-honeypot bleed and no <same_location/> needed (it behaved
+  inconsistently live). Tier rules use their own "engagement" group so they never
+  count themselves. IDs: 100400-100409.
+-->
+<group name="engagement,">
+
+  <!-- OPPORTUNIST: repeated host/network recon (enumeration), nothing deeper. -->
+  <rule id="100400" level="8" frequency="3" timeframe="120">
+    <if_matched_sid>100411</if_matched_sid>
+    <description>Attacker tier OPPORTUNIST: repeated recon on the honeypot.</description>
+    <group>engagement,tier_opportunist,</group>
+  </rule>
+
+  <!-- SKILLED: 2+ beyond-recon actions (cred access / ingress / persistence /
+       evasion) within the window. This is the ENGAGE trigger: Active Response
+       plants lures + holds the ban (see Phase C3). -->
+  <rule id="100401" level="12" frequency="2" timeframe="120">
+    <if_matched_group>deep_attack</if_matched_group>
+    <description>Attacker tier SKILLED: multiple beyond-recon actions - engage.</description>
+    <group>engagement,tier_skilled,</group>
   </rule>
 
 </group>

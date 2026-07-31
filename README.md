@@ -48,6 +48,7 @@ The custom **CTI · Threat Overview** dashboard after a few runs — top attacke
 7b. [Scripts reference](#scripts)
 7c. [Add-on: beelzebub LLM honeypot](#beelzebub)
 7d. [Add-on: shelLM LLM honeypot](#shellm)
+7e. [Adaptive Engagement (Phase C)](#engagement)
 8. [Scope, honesty & limitations](#limits)
 9. [Troubleshooting](#troubleshooting)
 
@@ -335,6 +336,7 @@ bin/                          # operator CLI (run these)
 src/                          # the code that runs inside the lab
   soar/                       # defensive automation (runs in Wazuh)
     active_defense.py         # Active Response: iptables ban
+    engage.py                 # Phase C: adaptive engagement (plant lures on SKILLED)
     malware_capture.py        # integration: VirusTotal hash lookup
     threat_report.py          # Phase A: AI analyst -> MITRE ATT&CK report
   redteam/
@@ -382,6 +384,7 @@ quick map of what each one does and when to run it.
 |--------|------|--------------|
 | `simulate_attacks.py` | Red team | `paramiko` over SSH: cracks the weak login and **holds** the session, keeps brute-forcing to trip detection, then runs recon / persistence / EICAR drop / log-wipe — a real 6-phase Cyber Kill Chain. |
 | `active_defense.py` | Active Response | Runs on the honeypot agent when Wazuh fires the brute-force rule. Reads the alert JSON from **stdin (`readline`)**, extracts `srcip`, and **appends** an `iptables` DROP (absolute paths — `execd` has a minimal `PATH`). |
+| `engage.py` | Active Response (Phase C) | On the SKILLED tier (rule 100401), plants decoy lures (fake `id_rsa`/`backup_db.sql`/`credentials.txt`) and **holds** the ban to harvest TTPs. Reading a lure trips the tripwire (100402), which bans the srcip. |
 | `malware_capture.py` | VirusTotal integration | Runs on the manager on a FIM new-file alert. Pulls the **SHA-256 straight from the alert** and queries VirusTotal via stdlib `urllib` (no deps on the manager image). |
 | `threat_report.py` | AI analyst (Phase A) | Offline: reads Wazuh detections, **pseudonymises IOCs before egress**, applies a sliding-window **rate-limit guardrail**, and asks Gemini for a MITRE ATT&CK report. Never in the attack path. |
 
@@ -529,6 +532,67 @@ trade-off, measured — not asserted. Both sessions are also visible in Wazuh
 > Even shelLM's consistency is probabilistic on a 3B local model; a GPT-4-class
 > model (as in the shelLM paper) would push the harder probes higher. The
 > benchmark is honest about that rather than cherry-picking a good run.
+
+<a name="engagement"></a>
+## 7e. Adaptive Engagement (Phase C)
+
+The base lab **always bans**. Phase C makes the response *adaptive*: score an
+attacker's sophistication from what they actually do, then **cut the noise fast**
+and **engage the skilled** — plant lures, hold them longer, and harvest more TTPs
+before shutting them down. It's built entirely from the SOAR primitives already
+here (command auditing + correlation + Active Response + FIM), no new services.
+
+Honest framing: this is **heuristic tiering + escalation**, not real-time threat
+prediction.
+
+### How it works
+```
+commands (snoopy) ─▶ category rules ─▶ correlation tiers ─▶ Active Response
+ recon/cred/            100411-100415     100400 OPPORTUNIST   ban (noise)
+ ingress/persist/                         100401 SKILLED ──▶ engage.py: plant lures,
+ evasion                                                     hold the ban
+                                                                    │
+   attacker reads a lure ─▶ 100402 TRIPWIRE (lvl 13) ─▶ disengage: ban the srcip
+```
+
+1. **Command visibility.** `snoopy` (an `LD_PRELOAD` execve logger) records every
+   command run on the honeypot — including non-interactive `exec` and recon that
+   leaves no FIM trace (`cat /etc/shadow`, `uname`). It also captures the SSH
+   client IP, so command events carry `srcip`.
+2. **Classification.** Local rules sort each command into a MITRE-ish category:
+   recon (100411), credential access (100412), ingress (100413), persistence
+   (100414), evasion (100415).
+3. **Tiering (native Wazuh correlation).** `100400 OPPORTUNIST` = repeated recon;
+   `100401 SKILLED` = 2+ beyond-recon actions in a window. No bolt-on scorer — a
+   real SOC escalates with correlation rules.
+4. **Engage.** SKILLED fires `engage.py` (a second Active-Response script): it
+   plants decoy lures (`~/.ssh/id_rsa`, `backup_db.sql`, `credentials.txt` — all
+   fake) and **does not ban**, keeping the attacker engaged.
+5. **Tripwire + disengage.** Reading a lure trips `100402` (level 13, the loudest
+   signal in the lab), which drives `active_defense` to **ban the srcip** — the
+   attacker took the bait, so we cut them off.
+
+### Try it
+```bash
+./bin/attack.sh --profile skilled   # full chain: recon → deep → SKILLED → engage → reads a lure → tripwire → ban
+./bin/attack.sh --profile noise     # scan + brute only: classified low, banned fast, no engagement
+```
+Watch the tiers and the tripwire in the dashboard (query `rule.groups:engagement`)
+or with `./bin/logs.sh json`.
+
+### How it fits
+| Piece | Role |
+|-------|------|
+| `services/honeypot/` (snoopy) | command auditing → `/var/log/snoopy.log` |
+| `services/wazuh-config/wazuh_manager/local_decoder.xml` | parses the command log (+ srcip) |
+| `services/wazuh-config/wazuh_manager/local_rules.xml` | command categories 100410-100415, tiers 100400/100401, tripwire 100402 |
+| `src/soar/engage.py` | Active Response: plant lures on SKILLED, hold the ban |
+| `src/redteam/simulate_attacks.py --profile` | skilled vs noise demo |
+
+> **Honest notes.** Tiering is heuristic (rule combos), not prediction. `engage`
+> has a 900 s per-IP dedup (it won't re-plant for the same attacker within the
+> window — by design). snoopy is noisy (it logs system execs too), but those stay
+> at base level 2 and never match the attacker-category rules.
 
 <a name="limits"></a>
 ## 8. Scope, honesty & limitations

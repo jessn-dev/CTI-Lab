@@ -1,10 +1,12 @@
 <!--
   Local decoders for the Threat Intelligence Lab.
 
-  Phase C1: parse the honeypot's snoopy command-audit log. Each line looks like:
-    snoopy: user=root uid=0 tty=(none) cwd=/ cmd=cat /etc/shadow
-  The extracted `command` field is what the local rules (100410+) classify into
-  sophistication categories, which the correlation rules (Phase C2) escalate.
+  Phase C1/C5: parse the honeypot's snoopy command-audit log. Each line looks like:
+    snoopy: user=root uid=0 tty=(none) cwd=/ cli=1.2.3.4 55622 22 cmd=cat /etc/shadow
+  `command` is classified into sophistication categories (rules 100410+); `srcip`
+  (the SSH client IP, empty for local/system execs) lets the tripwire ban drive
+  active_defense (Phase C5). cli holds SSH_CLIENT (ip cport sport), so we capture
+  just the leading IP and skip the ports up to " cmd=".
 -->
 <decoder name="snoopy">
   <prematch>^snoopy: </prematch>
@@ -12,6 +14,6 @@
 
 <decoder name="snoopy-fields">
   <parent>snoopy</parent>
-  <regex type="pcre2">user=(\S+) uid=(\d+) tty=(\S+) cwd=(\S+) cmd=(.+)$</regex>
-  <order>srcuser, uid, tty, cwd, command</order>
+  <regex type="pcre2">user=(\S+) uid=(\d+) tty=(\S+) cwd=(\S+) cli=(\d+\.\d+\.\d+\.\d+)?[^=]*cmd=(.+)$</regex>
+  <order>srcuser, uid, tty, cwd, srcip, command</order>
 </decoder>

@@ -17,6 +17,7 @@ Requires paramiko (see requirements.txt). Target/creds overridable via env:
   HONEYPOT_USER (default root)       HONEYPOT_PASS (default toor)
 """
 
+import argparse
 import os
 import socket
 import time
@@ -98,8 +99,16 @@ def ssh_exec(client, command):
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Adversary simulation against the honeypot")
+    parser.add_argument(
+        "--profile", choices=["skilled", "noise"], default="skilled",
+        help="skilled = full kill chain (trips SKILLED tier -> engage -> reads a "
+             "lure to trip the tripwire); noise = scan + brute-force only (gets "
+             "banned fast, no engagement). Phase C adaptive-engagement demo.")
+    args = parser.parse_args()
+
     print("\n>> INITIATING ADVERSARY SIMULATION <<")
-    print(f"Target honeypot: {USER}@{HOST}:{PORT}\n")
+    print(f"Target honeypot: {USER}@{HOST}:{PORT}   profile: {args.profile}\n")
     time.sleep(1)
 
     # -- PHASE 1: Reconnaissance ------------------------------------------
@@ -160,6 +169,17 @@ def main():
           "(new connections blocked; this foothold persists).")
     time.sleep(2)
 
+    # NOISE profile stops here: a scanner/spray with no post-exploitation. It
+    # trips only the brute-force rule, so it's classified low and banned fast -
+    # no engagement, no lures. (Phase C: the adaptive lab cuts noise quickly.)
+    if args.profile == "noise":
+        session.close()
+        print("\n=========================================================")
+        print("NOISE SIMULATION COMPLETE - brute-force only.")
+        print("Expected: fast Active Response ban, NO engagement (no lures).")
+        print("=========================================================\n")
+        return
+
     # -- PHASE 3: Execution & Discovery -----------------------------------
     print_phase(3, "Execution & Discovery",
                 "T1082 (System Info), T1003 (Credential Dumping)",
@@ -203,6 +223,23 @@ def main():
     ssh_exec(session, "echo '' > /var/log/auth.log 2>/dev/null; "
                       "rm -f /var/log/syslog 2>/dev/null")
     print("[+] Local logs wiped (but the SIEM already has the evidence).")
+    time.sleep(1)
+
+    # -- PHASE 7: Take the bait (Phase C adaptive engagement) --------------
+    # By now the sustained multi-category activity has tripped the SKILLED tier
+    # (rule 100401), so Active Response has planted decoy lures. A skilled
+    # attacker goes looking for creds - reading a planted lure trips the tripwire
+    # (rule 100402, the loudest signal) and disengages us (ban).
+    print_phase(7, "Take the Bait (Adaptive Engagement)",
+                "T1552 (Unsecured Credentials)", "Adversary -> Victim",
+                "Hunting for credentials - reads a planted decoy lure.")
+    print("[*] Waiting for the honeypot to plant lures (engagement)...")
+    time.sleep(6)
+    for lure in ("/root/.ssh/id_rsa", "/root/credentials.txt"):
+        out = ssh_exec(session, f"cat {lure}")
+        got = "FOUND" if out.strip() else "empty/absent"
+        print(f"[*] $ cat {lure}   -> {got}")
+    print("[+] Decoy read. Tripwire (rule 100402) should now fire + disengage.")
 
     session.close()
     print("\n=========================================================")

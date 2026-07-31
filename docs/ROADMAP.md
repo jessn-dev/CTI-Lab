@@ -129,6 +129,20 @@ Escalate the fake surface / verbosity based on observed attacker sophistication
 **NOT** "detect a zero-day in real time" — that's an unsolved problem; don't
 oversell it.
 
+**Phase C-1 — DONE.** The "always ban" SOAR is now adaptive:
+- **Command visibility** — `snoopy` (LD_PRELOAD) logs every command (incl.
+  non-interactive exec + recon with no FIM trace) with the SSH client IP →
+  category rules 100410-100415 (recon/cred/ingress/persistence/evasion).
+- **Tiering** — native Wazuh correlation: 100400 OPPORTUNIST (repeated recon),
+  100401 SKILLED (2+ beyond-recon actions).
+- **Engage** — SKILLED fires `src/soar/engage.py`, which plants decoy lures
+  (fake `id_rsa`/`backup_db.sql`/`credentials.txt`) and holds the ban.
+- **Tripwire + disengage** — reading a lure trips 100402 (lvl 13) → `active_defense`
+  bans the srcip. Demo: `./bin/attack.sh --profile skilled|noise`. See README §7e.
+
+**Phase C-2 (stretch, not started)** — feed the tier into shelLM's persona for an
+adaptive LLM surface (richer fake environment for skilled attackers).
+
 ## Benefits (why the whole direction is worth it)
 Realism & adaptability (beats fingerprinting), scalability (auto-generate many),
 lower operational overhead (less manual config), richer intelligence and fewer

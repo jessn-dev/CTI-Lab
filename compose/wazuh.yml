@@ -61,9 +61,10 @@ services:
       # Custom SOAR: VirusTotal lookup integration (runs on the manager).
       - ../src/soar/malware_capture.py:/var/ossec/integrations/custom-virustotal:ro
       - ../src/soar/malware_capture.py:/var/ossec/integrations/custom-virustotal.py:ro
-      # Active-Response executable must also resolve on the manager (it validates
+      # Active-Response executables must also resolve on the manager (it validates
       # the command's binary before dispatching the order to the agent).
       - ../src/soar/active_defense.py:/var/ossec/active-response/bin/active_defense.py:ro
+      - ../src/soar/engage.py:/var/ossec/active-response/bin/engage.py:ro
       # Local rules (classify beelzebub B1 + shelLM B2 honeypot events + Phase C
       # honeypot commands/tiers) and the local decoder (parses the snoopy log).
       - ../services/wazuh-config/wazuh_manager/local_rules.xml:/var/ossec/etc/rules/local_rules.xml:ro

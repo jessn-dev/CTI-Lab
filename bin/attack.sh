@@ -31,7 +31,8 @@ docker exec linux-honeypot sh -c \
 
 # shellcheck disable=SC1091
 source venv/bin/activate
-python3 src/redteam/simulate_attacks.py
+# Pass through args, e.g. --profile skilled|noise (Phase C adaptive-engagement demo).
+python3 src/redteam/simulate_attacks.py "$@"
 deactivate
 
 echo ""

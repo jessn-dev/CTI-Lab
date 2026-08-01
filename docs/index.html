@@ -151,7 +151,8 @@
 
             <section id="reporting">
                 <h2>Threat Reporting</h2>
-                <p>An offline analyst, <code class="tick">threat_report.py</code>, reads the Wazuh detections and asks an LLM (Gemini) to write a <strong>MITRE ATT&amp;CK</strong> incident report — executive summary, kill-chain timeline, technique table, IOCs, severity, and recommended actions. It runs on the logs (never in the attack path), <strong>pseudonymises IOCs before egress</strong>, and rate-limits itself to stay within the free-tier quota.</p>
+                <p>An offline analyst, <code class="tick">threat_report.py</code>, reads the Wazuh detections and asks an LLM to write a <strong>MITRE ATT&amp;CK</strong> incident report — executive summary, kill-chain timeline, technique table, IOCs, severity, and recommended actions. It runs on the logs (never in the attack path), <strong>pseudonymises IOCs before egress</strong>, and rate-limits itself to stay within the free-tier quota.</p>
+                <p>The backend is pluggable via <code class="tick">LLM_PROVIDER</code>: <strong>gemini</strong> (default, free tier), <strong>ollama</strong> (a local model — fully offline, nothing leaves the host), <strong>claude</strong> (highest-quality reports), or <strong>groq</strong> (free and very fast on open models). The prompt, event extraction, and guardrails are shared; each backend is one transport function.</p>
             </section>
 
             <section id="future-vision">
@@ -201,11 +202,15 @@
 
                 <div class="callout ok">
                     <span class="ic">✓</span>
-                    <div><strong>Two of these are already live.</strong> The lab now runs two LLM honeypots beside the static one, both backed by a local model (Ollama) and feeding the same Wazuh SIEM: <strong>beelzebub</strong> for breadth (a multi-protocol honeypot framework with metrics, SSH on port 2323 → rule 100301) and <strong>shelLM</strong> for depth (a consistency-focused LLM SSH shell, port 2224 → rule 100311). shelLM is a stdin/stdout chatbot, so a real <code class="tick">sshd</code> <code class="tick">ForceCommand</code>s each login into it. Between them the lab already has a real SSH honeypot, a <code class="tick">paramiko</code> attack harness, a SIEM ingesting every event, and Python SOAR acting on detections — the foundation for adaptive deception.</div>
+                    <div><strong>Two of these are already live.</strong> The lab now runs two LLM honeypots beside the static one, both backed by a local model (Ollama) and feeding the same Wazuh SIEM: <strong>beelzebub</strong> for breadth (a multi-protocol honeypot framework with metrics, SSH on port 2323 → rule 100301) and <strong>shelLM</strong> for depth (a consistency-focused LLM SSH shell, port 2224 → rule 100311). shelLM is a stdin/stdout chatbot, so a real <code class="tick">sshd</code> <code class="tick">ForceCommand</code>s each login into it, and a build-time patch ships every command typed into it to the SIEM (rules <code class="tick">100314</code>-<code class="tick">100319</code>), classified the same way as commands on the static box. Between them the lab already has a real SSH honeypot, a <code class="tick">paramiko</code> attack harness, a SIEM ingesting every event, and Python SOAR acting on detections — the foundation for adaptive deception.</div>
                 </div>
                 <div class="callout ok">
                     <span class="ic">✓</span>
                     <div><strong>And benchmarked.</strong> The two LLM honeypots were measured head to head on the same model (<code class="tick">llama3.2:3b</code>) over 3 trials, scored on session <em>consistency</em> — the metric that separates them. <strong>shelLM 12/12, beelzebub 9/12</strong>: beelzebub fails the <code class="tick">ls</code>-listing probe every trial (its <code class="tick">ls</code> doesn't show a file it just "wrote"), while shelLM lists it every time. Breadth (multi-protocol, per-command) vs depth (one coherent session), measured — not asserted.</div>
+                </div>
+                <div class="callout ok">
+                    <span class="ic">✓</span>
+                    <div><strong>And adaptive.</strong> The SIEM already scores an attacker's sophistication from the commands they run (rules <code class="tick">100400</code> OPPORTUNIST / <code class="tick">100401</code> SKILLED), and that tier now changes the honeypot's face. An Active-Response script (<code class="tick">persona.py</code>) publishes the tier per source IP; shelLM reads it at login and serves a matching persona — a busy internal jump host full of backups and service accounts for a skilled attacker, a bare, boring cloud VM for a spray-and-pray bot. The switch is itself an alert (<code class="tick">100312</code> / <code class="tick">100313</code>), so the deception is auditable rather than invisible.</div>
                 </div>
                 <div class="callout info">
                     <span class="ic">◆</span>

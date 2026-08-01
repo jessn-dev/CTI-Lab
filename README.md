@@ -214,7 +214,9 @@ docker exec -it wazuh.manager /var/ossec/bin/agent_control -l
 
 The lab includes a custom **"CTI · Threat Overview"** dashboard: top
 attacker IPs, alert-level distribution, MITRE ATT&CK techniques, alerts over
-time, top rules, and a total-alert metric. Its saved objects live in
+time, top rules, and a total-alert metric — plus two panels that put the **two
+LLM honeypots side by side** (beelzebub vs shelLM, over time and broken down by
+rule + source IP), the SIEM half of the B2 benchmark. Its saved objects live in
 `services/wazuh-config/wazuh_dashboard/cti-dashboard.ndjson` and import automatically on
 startup (or run `./bin/import-dashboard.sh`).
 
@@ -350,6 +352,7 @@ src/                          # the code that runs inside the lab
   soar/                       # defensive automation (runs in Wazuh)
     active_defense.py         # Active Response: iptables ban
     engage.py                 # Phase C: adaptive engagement (plant lures on SKILLED)
+    persona.py                # Phase C-2: publish the attacker tier for shelLM
     malware_capture.py        # integration: VirusTotal hash lookup
     threat_report.py          # Phase A: AI analyst -> MITRE ATT&CK report
   redteam/
@@ -370,6 +373,7 @@ services/                     # per-stack build + config assets
     config/                   # beelzebub.yaml + services/ (mounted to /configurations)
     agent/                    # sidecar Wazuh agent image
   shelLM/                     # B2 honeypot image (sshd ForceCommand -> shelLM chatbot)
+    personalities/            # C-2 tier personas (Tier_skilled / Tier_opportunist)
 requirements.txt / .env.example
 reports/                      # generated threat reports (gitignored)
 docs/                         # static portfolio site
@@ -398,8 +402,9 @@ quick map of what each one does and when to run it.
 | `simulate_attacks.py` | Red team | `paramiko` over SSH: cracks the weak login and **holds** the session, keeps brute-forcing to trip detection, then runs recon / persistence / EICAR drop / log-wipe — a real 6-phase Cyber Kill Chain. |
 | `active_defense.py` | Active Response | Runs on the honeypot agent when Wazuh fires the brute-force rule. Reads the alert JSON from **stdin (`readline`)**, extracts `srcip`, and **appends** an `iptables` DROP (absolute paths — `execd` has a minimal `PATH`). |
 | `engage.py` | Active Response (Phase C) | On the SKILLED tier (rule 100401), plants decoy lures (fake `id_rsa`/`backup_db.sql`/`credentials.txt`) and **holds** the ban to harvest TTPs. Reading a lure trips the tripwire (100402), which bans the srcip. |
+| `persona.py` | Active Response (Phase C-2) | On a tier alert (100400/100401), writes `<TIER> <epoch>` for the source IP into the shared `tier-state` volume. shelLM's `run.sh` reads it at login and serves the matching persona; the AR `delete` at timeout retires the tier. Validates the IP before using it as a filename. |
 | `malware_capture.py` | VirusTotal integration | Runs on the manager on a FIM new-file alert. Pulls the **SHA-256 straight from the alert** and queries VirusTotal via stdlib `urllib` (no deps on the manager image). |
-| `threat_report.py` | AI analyst (Phase A) | Offline: reads Wazuh detections, **pseudonymises IOCs before egress**, applies a sliding-window **rate-limit guardrail**, and asks an LLM (Gemini / Ollama / Claude via `LLM_PROVIDER`) for a MITRE ATT&CK report. Never in the attack path. |
+| `threat_report.py` | AI analyst (Phase A) | Offline: reads Wazuh detections, **pseudonymises IOCs before egress**, applies a sliding-window **rate-limit guardrail**, and asks an LLM (Gemini / Ollama / Claude / Groq via `LLM_PROVIDER`) for a MITRE ATT&CK report. Never in the attack path. |
 
 ### Honeypot image (`services/honeypot/`)
 | File | What it does |
@@ -462,6 +467,10 @@ stateless response generator. Where beelzebub gives *breadth* (multi-protocol),
 shelLM gives *depth* (a coherent shell across a session). Same local Ollama, same
 SIEM, its own compose file.
 
+Since Phase C-2 the persona it wears is **adaptive**: an attacker the SIEM has
+already tiered as SKILLED lands on a busy internal jump host, an OPPORTUNIST on a
+bare cloud VM, anyone else on shelLM's default box — see [§7e](#engagement).
+
 ### How it's wired (it's not a turnkey server)
 shelLM is a stdin/stdout LLM shell *chatbot*, not an SSH server. We expose it the
 way its paper does: a real **OpenSSH** server whose `ForceCommand` drops every
@@ -502,14 +511,32 @@ Each session raises **rule 100311** (group `shellm`) with the source IP — quer
 | `services/shelLM/Dockerfile` | Ubuntu + `sshd` (`ForceCommand`) + shelLMv2 (venv, pinned) + baked Wazuh agent |
 | `services/shelLM/run.sh` | ForceCommand target: logs a session-start JSON event, then execs the shelLM chatbot (`--provider ollama`) |
 | `services/shelLM/entrypoint.sh` | Writes shelLM config (`.env`/`.runenv`), starts `rsyslog`, enrolls the agent, runs `sshd` |
-| `services/wazuh-config/wazuh_manager/local_rules.xml` | rules 100310/100311 classifying shelLM sessions |
+| `services/shelLM/patch_command_log.py` | Build-time patch: log every command typed to the SIEM feed |
+| `services/shelLM/patch_ollama_client.py` | Build-time patch: strip the stray `assistant` role label |
+| `services/wazuh-config/wazuh_manager/local_rules.xml` | rules 100310-100319: sessions, adaptive persona, per-command categories |
 | `compose/shellm.yml` | the add-on stack (shelLM + baked agent) |
 
-### SIEM ingestion (Phase 1)
-Two log sources reach Wazuh: `auth.log` (sshd → the built-in 5710/5712/5763
-rules) and a session-start JSON line per login (→ rules 100310/100311).
-Per-command ingestion (parsing shelLM's own text transcript) is a later
-refinement.
+### SIEM ingestion
+Three log sources reach Wazuh: `auth.log` (sshd → the built-in 5710/5712/5763
+rules), a session-start JSON line per login (→ rules 100310/100311, plus
+100312/100313 when the persona adapted), and **one JSON line per command typed**
+(→ 100314, classified into 100315-100319).
+
+shelLM's own transcripts (`shelLMv2/logs/history.txt`, `command_history.txt`) are
+readline/dialog artifacts — no timestamps, no source IP, flushed at session end —
+so they're useless as a SIEM feed. Instead `services/shelLM/patch_command_log.py`
+patches the one chokepoint every command flows through (`input(prompt)` in the
+main loop) at build time, appending a JSON event with the session's
+`srcip`/`tier`/`persona`. Same trick as the existing `patch_ollama_client.py`,
+pinned to the same upstream commit. The static honeypot gets this from snoopy
+(real `execve`); shelLM never executes anything, so it has to be taken at the
+prompt.
+
+The categories mirror the snoopy ones (recon / credential access / ingress /
+persistence / evasion) but stay in `shellm_*` groups and are **not** tagged
+`deep_attack` — that group drives the SKILLED correlation rule (100401), which has
+no `<same_source_ip/>` and would bleed across honeypots. Giving the LLM honeypot
+its own tier rule is a separate, deliberate step.
 
 ### Benchmark: shelLM vs beelzebub (Part 2)
 The point of running both is to measure the thing that actually separates them —
@@ -585,10 +612,40 @@ commands (snoopy) ─▶ category rules ─▶ correlation tiers ─▶ Active R
    signal in the lab), which drives `active_defense` to **ban the srcip** — the
    attacker took the bait, so we cut them off.
 
+### Adaptive LLM surface (Phase C-2)
+
+The tier doesn't only change what the *static* honeypot does — it changes the face
+the **shelLM** honeypot shows. `src/soar/persona.py` (a third Active-Response
+script) publishes the attacker's tier into a shared docker volume; shelLM's
+`run.sh` reads it at login and picks the matching persona:
+
+```
+100400 OPPORTUNIST ─▶ Tier_opportunist  bare 1-vCPU cloud VM, nothing on it
+100401 SKILLED     ─▶ Tier_skilled      jump-01.corp.local: backups, /opt/app,
+                                        service accounts, the same lure files
+no tier / expired  ─▶ Eman_v1           shelLM's default persona
+```
+
+Why a shared volume instead of an Active Response on the shelLM agent: the tier
+alerts come from the *static* honeypot's agent (snoopy command events), so
+`<location>local</location>` runs `persona.py` there. A file per source IP in
+`/var/lib/tier-state` crosses the gap without `<location>all</location>` or a
+hardcoded agent id. A tier older than `SHELLM_TIER_TTL` (default 3600 s) is
+ignored, and the AR `delete` at timeout retires it.
+
+shelLM replays the previous transcript so the fake box stays consistent between
+logins — that's its whole point — so `run.sh` wipes that history (`--cleaned`)
+**only** when the persona actually changes, since the old transcript describes a
+different machine. Each session logs its tier + persona, which the SIEM raises as
+`100312` (SKILLED served the rich box, level 10) or `100313` (OPPORTUNIST).
+
 ### Try it
 ```bash
 ./bin/attack.sh --profile skilled   # full chain: recon → deep → SKILLED → engage → reads a lure → tripwire → ban
 ./bin/attack.sh --profile noise     # scan + brute only: classified low, banned fast, no engagement
+
+# then, from the same host, walk into the LLM honeypot and see the surface adapt:
+ssh root@localhost -p 2224          # password: toor  → jump-01.corp.local, not the default box
 ```
 Watch the tiers and the tripwire in the dashboard (query `rule.groups:engagement`)
 or with `./bin/logs.sh json`.
@@ -600,12 +657,20 @@ or with `./bin/logs.sh json`.
 | `services/wazuh-config/wazuh_manager/local_decoder.xml` | parses the command log (+ srcip) |
 | `services/wazuh-config/wazuh_manager/local_rules.xml` | command categories 100410-100415, tiers 100400/100401, tripwire 100402 |
 | `src/soar/engage.py` | Active Response: plant lures on SKILLED, hold the ban |
+| `src/soar/persona.py` | Active Response: publish the tier to the `tier-state` volume (C-2) |
+| `services/shelLM/personalities/` | `Tier_skilled` / `Tier_opportunist` personas |
 | `src/redteam/simulate_attacks.py --profile` | skilled vs noise demo |
 
 > **Honest notes.** Tiering is heuristic (rule combos), not prediction. `engage`
 > has a 900 s per-IP dedup (it won't re-plant for the same attacker within the
-> window — by design). snoopy is noisy (it logs system execs too), but those stay
-> at base level 2 and never match the attacker-category rules.
+> window — by design). snoopy used to drown the log in the SIEM's own
+> housekeeping (`df`, `last`, a netstat pipeline, AR scripts — ~95% of the lines);
+> a `filter_chain` in `/etc/snoopy.ini` now excludes those process trees, so a
+> full `attack.sh` run writes ~45 lines instead of ~780, over half of them the
+> attacker's. Attacker commands are spawned by `sshd`, so nothing is lost. The
+> adaptive
+> persona keys on **source IP**, so an attacker who tiers up from one address and
+> then visits shelLM from another gets the default box.
 
 <a name="limits"></a>
 ## 8. Scope, honesty & limitations
@@ -673,4 +738,5 @@ requirements. All are handled in the repo; documented here for anyone extending 
 | Rule fires but AR script never runs (execd logs "Executing command", nothing happens) | `wazuh-execd` runs AR scripts with a **minimal PATH**, so `#!/usr/bin/env python3` (needs `env` on PATH) fails, as do bare `iptables` calls. Use an **absolute shebang** (`#!/usr/bin/python3`) and an absolute `/usr/sbin/iptables` — see `src/soar/active_defense.py`. |
 | AR script starts but hangs / does nothing | `sys.stdin.read()` blocks: execd sends **one JSON line but keeps the stdin pipe open**, so `read()` waits for EOF forever. Use `sys.stdin.readline()`. (A manual `printf … \| script` test passes because the pipe closes — masking the bug.) |
 | Manager doesn't dispatch the AR at all | The custom `<command>` must be defined on **both** manager and agent, the executable must resolve on **both** (`compose/wazuh.yml` mounts it into the manager; the honeypot image bakes it in), and rebuilding the honeypot needs authd `<force>` in `wazuh_manager.conf` or the agent gets stuck on `Duplicate agent name` and never forwards. |
+| Rebuilt a honeypot image and now **no alerts at all** from it (agent log: `ERROR: Duplicate agent name`) | authd's `<force>` only re-registers an existing name after `after_registration_time` (1 h by default), so a *second* rebuild inside that window leaves the fresh container unenrolled — it looks alive but forwards nothing, and an `attack.sh` run silently produces zero alerts. Check `agent_control -l` for a stale ID, then: `docker exec wazuh.manager /var/ossec/bin/manage_agents -r <id>`, and in the container `rm -f /var/ossec/etc/client.keys && /var/ossec/bin/agent-auth -m wazuh.manager && /var/ossec/bin/wazuh-control restart`. |
 | Active Response ban kills the attacker's live session | Expected if the ban is inserted (`-I`) above the ESTABLISHED accept rule. The lab **appends** the ban (`-A`) after an `ESTABLISHED,RELATED` accept installed at boot, so live sessions survive and only new connections are dropped. |

@@ -49,6 +49,12 @@ RUN python3 -m venv /opt/shelLM/venv \
 COPY services/shelLM/patch_ollama_client.py /tmp/patch_ollama_client.py
 RUN python3 /tmp/patch_ollama_client.py && rm /tmp/patch_ollama_client.py
 
+# Log every command typed into the LLM shell to the SIEM feed (shelLM's own
+# transcripts have no srcip/timestamps). The static honeypot gets this from
+# snoopy; shelLM executes nothing, so it is taken at the prompt instead.
+COPY services/shelLM/patch_command_log.py /tmp/patch_command_log.py
+RUN python3 /tmp/patch_command_log.py && rm /tmp/patch_command_log.py
+
 # --- Honeypot bait: weak root:toor login, forced into the shelLM shell -------
 RUN mkdir -p /var/run/sshd \
     && echo 'root:toor' | chpasswd \
@@ -64,6 +70,14 @@ RUN mkdir -p /var/run/sshd \
 
 # Session-start logger + the ForceCommand launcher.
 COPY --chmod=0755 services/shelLM/run.sh /opt/shelLM/run.sh
+
+# Phase C-2: tier personas (a bare box for OPPORTUNIST, a busy jump host for
+# SKILLED) alongside shelLM's own, so --personality picks them up by name.
+COPY services/shelLM/personalities/ \
+     /opt/shelLM/shelLMv2/LLM_Plugins/personalities/
+# Mount point for the shared "tier-state" volume persona.py writes on the static
+# honeypot; created here so a standalone run (no volume) still has a readable path.
+RUN mkdir -p /var/lib/tier-state
 
 # Tell the agent to read auth.log (sshd) + shelLM's session log.
 COPY services/shelLM/agent-shellm.conf /tmp/agent-shellm.conf

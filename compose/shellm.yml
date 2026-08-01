@@ -25,6 +25,14 @@ services:
       - WAZUH_MANAGER=wazuh.manager
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - SHELLM_MODEL=llama3.2:3b        # same model as beelzebub (fair A/B later)
-      - SHELLM_PERSONALITY=Eman_v1      # a Linux-box persona shipped by shelLM
+      - SHELLM_PERSONALITY=Eman_v1      # default persona (untiered attacker)
+      - SHELLM_TIER_TTL=3600            # ignore a tier older than this (seconds)
+    volumes:
+      # Phase C-2: read-only view of the tier state src/soar/persona.py writes on
+      # the static honeypot. run.sh maps the tier to a persona per session.
+      - tier-state:/var/lib/tier-state:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
+volumes:
+  tier-state:

@@ -25,7 +25,15 @@ services:
       - "2222:22"          # SSH honeypot target for the brute-force sim
     environment:
       - WAZUH_MANAGER=wazuh.manager
+    volumes:
+      # Phase C-2: src/soar/persona.py (Active Response) writes the attacker's
+      # tier here; the shelLM container reads it to pick its persona. Shared by
+      # name because both files pin the same compose project.
+      - tier-state:/var/lib/tier-state
     # No depends_on: the entrypoint already waits for wazuh.manager:1515 before
     # enrolling, so this file runs standalone. Startup order is sequenced by
     # start_lab.sh (SIEM first). depends_on would break a standalone run since
     # wazuh.manager lives in compose/wazuh.yml.
+
+volumes:
+  tier-state:

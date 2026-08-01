@@ -57,6 +57,74 @@
     <group>shellm,attack,ssh,</group>
   </rule>
 
+  <!-- Phase C-2 adaptive persona: run.sh logs the tier persona.py published for
+       this source IP (see src/soar/persona.py). Children of 100311, so they
+       replace the generic session alert when the surface adapted. -->
+  <rule id="100312" level="10">
+    <if_sid>100311</if_sid>
+    <field name="tier">^SKILLED$</field>
+    <description>shelLM adaptive persona: SKILLED attacker $(srcip) served the rich decoy environment ($(persona)).</description>
+    <group>shellm,engagement,tier_skilled,attack,</group>
+  </rule>
+
+  <rule id="100313" level="7">
+    <if_sid>100311</if_sid>
+    <field name="tier">^OPPORTUNIST$</field>
+    <description>shelLM adaptive persona: OPPORTUNIST $(srcip) served the low-value box ($(persona)).</description>
+    <group>shellm,engagement,tier_opportunist,attack,</group>
+  </rule>
+
+  <!-- Per-command visibility inside the LLM shell. LinuxSSHbot.py is patched at
+       build time (services/shelLM/patch_command_log.py) to log one JSON line per
+       command typed, with the session's srcip/tier/persona. The categories mirror
+       the snoopy ones (100411-100415) so both honeypots read the same way.
+
+       Deliberately NOT tagged "deep_attack": that group drives the SKILLED
+       correlation rule (100401), which has no <same_source_ip/> and would then
+       bleed across honeypots. shelLM commands stay in shellm_* groups; giving the
+       LLM honeypot its own tier rule is a separate, deliberate step. -->
+  <rule id="100314" level="3">
+    <if_sid>100310</if_sid>
+    <field name="event">^command$</field>
+    <description>shelLM LLM SSH honeypot: command from $(srcip) - $(command)</description>
+    <group>shellm,attack,ssh,</group>
+  </rule>
+
+  <rule id="100315" level="5">
+    <if_sid>100314</if_sid>
+    <field name="command" type="pcre2">(?i)\b(whoami|id|uname|hostname|netstat|ss|ifconfig|ip\s+a|ps\s|lscpu|cat\s+/etc/(passwd|issue|os-release))\b</field>
+    <description>shelLM recon/discovery from $(srcip): $(command)</description>
+    <group>shellm,attack,recon,discovery,shellm_recon,</group>
+  </rule>
+
+  <rule id="100316" level="7">
+    <if_sid>100314</if_sid>
+    <field name="command" type="pcre2">(?i)(cat|less|more|head|tail)\s+.*(shadow|id_rsa|\.ssh|credentials|\.aws|\.env|backup.*\.sql)</field>
+    <description>shelLM credential access from $(srcip): $(command)</description>
+    <group>shellm,attack,credential_access,shellm_deep,</group>
+  </rule>
+
+  <rule id="100317" level="7">
+    <if_sid>100314</if_sid>
+    <field name="command" type="pcre2">(?i)\b(wget|curl|scp|tftp|nc|ncat|socat)\b</field>
+    <description>shelLM ingress/tool transfer from $(srcip): $(command)</description>
+    <group>shellm,attack,command_control,shellm_deep,</group>
+  </rule>
+
+  <rule id="100318" level="8">
+    <if_sid>100314</if_sid>
+    <field name="command" type="pcre2">(?i)(useradd|adduser|usermod|chpasswd|crontab|authorized_keys|systemctl\s+enable|update-rc\.d)</field>
+    <description>shelLM persistence attempt from $(srcip): $(command)</description>
+    <group>shellm,attack,persistence,shellm_deep,</group>
+  </rule>
+
+  <rule id="100319" level="8">
+    <if_sid>100314</if_sid>
+    <field name="command" type="pcre2">(?i)(history\s+-c|shred|rm\s+-rf\s+/var/log|:\s*&gt;\s*/var/log|&gt;\s*/var/log/auth\.log|unset\s+HISTFILE)</field>
+    <description>shelLM defense evasion (log/history wipe) from $(srcip): $(command)</description>
+    <group>shellm,attack,defense_evasion,shellm_deep,</group>
+  </rule>
+
 </group>
 
 <!--

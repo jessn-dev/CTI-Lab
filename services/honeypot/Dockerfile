@@ -31,7 +31,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # cli=%{env:SSH_CLIENT} captures the attacker's source IP (sshd sets SSH_CLIENT in
 # the session env, even for non-interactive exec) so command events carry srcip -
 # used by the tier correlation and by the tripwire-driven ban (Phase C5).
-RUN printf '\nmessage_format = "snoopy: user=%%{username} uid=%%{uid} tty=%%{tty} cwd=%%{cwd} cli=%%{env:SSH_CLIENT} cmd=%%{cmdline}"\noutput = file:/var/log/snoopy.log\n' \
+#
+# filter_chain drops the SIEM's own housekeeping: wazuh-modulesd/logcollector run
+# `df -P`, `last -n 20` and a netstat|sed|sort pipeline on a timer, and execd
+# spawns our Active-Response scripts - together ~95% of the log, all at base
+# level 2, none of it attacker activity. Everything an attacker runs is spawned
+# by sshd, so excluding these process trees costs no detection. (uid filters are
+# useless here: every process in the container is root.)
+# NOTE the truncated "wazuh-logcollec": the filter matches the kernel's comm,
+# which is capped at 15 characters - spell it out or logcollector's `df`/`last`/
+# netstat pipelines keep leaking into the log.
+RUN printf '\nmessage_format = "snoopy: user=%%{username} uid=%%{uid} tty=%%{tty} cwd=%%{cwd} cli=%%{env:SSH_CLIENT} cmd=%%{cmdline}"\nfilter_chain = "exclude_spawns_of:wazuh-modulesd,wazuh-logcollec,wazuh-logcollector,wazuh-agentd,wazuh-execd,wazuh-syscheckd,wazuh-control"\noutput = file:/var/log/snoopy.log\n' \
         >> /etc/snoopy.ini
 
 # Install the Wazuh agent (matches the 4.8.0 manager).
@@ -61,8 +71,10 @@ RUN mkdir -p /var/run/sshd \
 # relative to it.
 COPY --chmod=0750 src/soar/active_defense.py /var/ossec/active-response/bin/active_defense.py
 COPY --chmod=0750 src/soar/engage.py /var/ossec/active-response/bin/engage.py
+COPY --chmod=0750 src/soar/persona.py /var/ossec/active-response/bin/persona.py
 RUN chown root:wazuh /var/ossec/active-response/bin/active_defense.py \
-                     /var/ossec/active-response/bin/engage.py
+                     /var/ossec/active-response/bin/engage.py \
+                     /var/ossec/active-response/bin/persona.py
 
 # --- Extra File Integrity Monitoring on attacker drop zones ------------------
 COPY services/honeypot/agent-fim.conf /tmp/agent-fim.conf

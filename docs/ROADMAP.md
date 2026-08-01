@@ -1,11 +1,11 @@
-ol# Roadmap / Deferred Work
+# Roadmap / Deferred Work
 
 Tracked so we don't lose it. Newest intent at top.
 
 ## Pluggable LLM backend (Phase A) — DONE (2026-07-31)
-`src/soar/threat_report.py` now supports three backends via `LLM_PROVIDER`
-(`gemini` | `ollama` | `claude`); the prompt + event extraction are shared, each
-transport is one function:
+`src/soar/threat_report.py` now supports four backends via `LLM_PROVIDER`
+(`gemini` | `ollama` | `claude` | `groq`); the prompt + event extraction are
+shared, each transport is one function:
 - **`analyze_gemini()`** — free tier (default). Sliding-window rate-limit + 429
   retry + PII egress guardrail.
 - **`analyze_ollama()`** — local model (Ollama), fully offline, zero cost, no data
@@ -16,6 +16,18 @@ transport is one function:
   set `claude-haiku-4-5` for cheap/fast). Raw Messages API (no new dependency),
   429/529/5xx retry. Keep `REDACT_PII` on. *Written, not yet run live (needs
   `ANTHROPIC_API_KEY`).*
+- **`analyze_groq()`** — Groq free tier, very fast inference on open models
+  (`GROQ_MODEL` default `llama-3.3-70b-versatile`). OpenAI-compatible raw HTTP
+  (no new dependency), 429/5xx retry. Keep `REDACT_PII` on. *Verified live
+  2026-08-01: full report written to `reports/`.*
+
+Live-run status of the remote backends (2026-08-01): **gemini** and **ollama**
+verified end to end; **groq** verified end to end; **claude** exercised end to end
+up to the API — request built, PII guardrail applied (10 IOCs tokenised), 4684
+chars sent — and rejected with `400 invalid_request_error: Your credit balance is
+too low`. That is an account/billing state, not a code path: the error handling
+printed it cleanly and exited. Re-run `LLM_PROVIDER=claude ./bin/report.sh` once
+the account has credit to close it out.
 
 The egress guardrail (`sanitize_events` / `restore_tokens`) stays in front of the
 remote backends; it can be skipped for `ollama`. See README §6b.
@@ -30,8 +42,20 @@ remote backends; it can be skipped for `ollama`. See README §6b.
 - **Phase B2 (Part 1) — shelLM LLM honeypot.** Consistency-focused LLM SSH shell
   (Stratosphere IPS) on port 2224, exposed via a real `sshd` `ForceCommand` into
   the shelLM chatbot, local Ollama, baked Wazuh agent forwarding sessions as rule
-  100311. Core lab unaffected. See README §7d. **Part 2 (the shelLM-vs-beelzebub
-  benchmark) is deferred** — build after both are stable.
+  100311. Core lab unaffected. See README §7d. Part 2 (the shelLM-vs-beelzebub
+  benchmark) shipped too, with the side-by-side SIEM panels added 2026-07-31.
+- **shelLM per-command visibility (2026-08-01).** `services/shelLM/patch_command_log.py`
+  patches `input(prompt)` in `LinuxSSHbot.py` at build time to append one JSON
+  event per command (with the session's `srcip`/`tier`/`persona`) to the file the
+  agent already tails. Rules 100314 + categories 100315-100319 mirror the snoopy
+  ones, kept in `shellm_*` groups (deliberately **not** `deep_attack`, which would
+  bleed into the 100401 tier correlation). Verified live.
+- **snoopy noise filter (2026-08-01).** A `filter_chain` in `/etc/snoopy.ini`
+  excludes the SIEM's own process trees (`wazuh-modulesd`, `wazuh-logcollec` —
+  note the 15-char comm truncation — `wazuh-agentd`, `wazuh-execd`,
+  `wazuh-syscheckd`, `wazuh-control`). A full `attack.sh --profile skilled` run now
+  writes ~45 snoopy lines instead of ~780, more than half of them the attacker's,
+  with the whole tier/tripwire/AR chain unchanged.
 
 ## Phase B — AI-generated honeypots (the big vision)
 
@@ -137,8 +161,22 @@ oversell it.
 - **Tripwire + disengage** — reading a lure trips 100402 (lvl 13) → `active_defense`
   bans the srcip. Demo: `./bin/attack.sh --profile skilled|noise`. See README §7e.
 
-**Phase C-2 (stretch, not started)** — feed the tier into shelLM's persona for an
-adaptive LLM surface (richer fake environment for skilled attackers).
+**Phase C-2 — DONE (2026-07-31).** The tier now also drives the *LLM* surface:
+- `src/soar/persona.py` (a third Active-Response script, fires on 100400/100401)
+  writes `<TIER> <epoch>` per source IP into a shared docker volume
+  (`tier-state`), which the shelLM container mounts read-only.
+- shelLM's `run.sh` reads it at login: SKILLED → `Tier_skilled` (a busy
+  `jump-01.corp.local` with backups, service accounts and the same lure files
+  `engage.py` plants), OPPORTUNIST → `Tier_opportunist` (a bare 1-vCPU VM with
+  nothing on it), no/expired tier → `Eman_v1`. Personas live in
+  `services/shelLM/personalities/`.
+- Session history is wiped (`--cleaned`) **only** on a persona switch, so shelLM
+  keeps its cross-session consistency except when the box deliberately changes.
+- The choice is visible in the SIEM: rule `100312` (SKILLED) / `100313`
+  (OPPORTUNIST). Verified live end-to-end: `attack.sh --profile skilled` → tier
+  published → SSH to 2224 answered as `jump-01.corp.local` → 100312 alert.
+- Keys on source IP: tier up from one address, visit shelLM from another, and you
+  get the default box. Honest limitation, not a bug.
 
 ## Benefits (why the whole direction is worth it)
 Realism & adaptability (beats fingerprinting), scalability (auto-generate many),

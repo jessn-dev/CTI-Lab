@@ -40,10 +40,23 @@ for i in $(seq 1 60); do
     sleep 5
 done
 
+# Retry, then fail loudly: an unenrolled container still answers SSH, so a silent
+# failure here looks like "shelLM works but never reaches the SIEM".
 if [ ! -s /var/ossec/etc/client.keys ]; then
-    echo "[shellm] enrolling agent with ${MANAGER}..."
-    /var/ossec/bin/agent-auth -m "${MANAGER}" || \
-        echo "[shellm] WARN: enrollment failed, agent will retry via auto-enrollment."
+    for attempt in 1 2 3; do
+        echo "[shellm] enrolling agent with ${MANAGER} (attempt ${attempt}/3)..."
+        /var/ossec/bin/agent-auth -m "${MANAGER}" && break
+        sleep 10
+    done
+fi
+
+if [ ! -s /var/ossec/etc/client.keys ]; then
+    echo "[shellm] ================================================================"
+    echo "[shellm] ERROR: NOT ENROLLED - sessions will not reach the SIEM."
+    echo "[shellm] Check for a stale 'shellm' record on the manager:"
+    echo "[shellm]   docker exec wazuh.manager /var/ossec/bin/agent_control -l"
+    echo "[shellm]   docker exec wazuh.manager /var/ossec/bin/manage_agents -r <id>"
+    echo "[shellm] ================================================================"
 fi
 
 echo "[shellm] starting Wazuh agent..."

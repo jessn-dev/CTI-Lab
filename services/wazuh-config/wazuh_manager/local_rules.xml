@@ -74,6 +74,7 @@
     <group>shellm,engagement,tier_opportunist,attack,</group>
   </rule>
 
+
   <!-- Per-command visibility inside the LLM shell. LinuxSSHbot.py is patched at
        build time (services/shelLM/patch_command_log.py) to log one JSON line per
        command typed, with the session's srcip/tier/persona. The categories mirror
@@ -90,60 +91,54 @@
     <group>shellm,attack,ssh,</group>
   </rule>
 
+  <!-- TRIPWIRE, LLM side. The SKILLED persona's environment contains the same
+       bait engage.py plants on the static box, so reading it means the same
+       thing: the attacker took it. Placed before the category rules so it wins.
+       This is what gives the LLM honeypot a terminal state - it drives the ban
+       (see the active-response block for 100322 in wazuh_manager.conf), so an
+       engaged attacker is eventually cut off instead of held forever. -->
+  <rule id="100322" level="13">
+    <if_sid>100314</if_sid>
+    <field name="command" type="pcre2">(?i)(/root/\.ssh/id_rsa|/root/backup_db\.sql|/root/credentials\.txt)</field>
+    <description>TRIPWIRE (shelLM): attacker $(srcip) read a planted lure in the LLM shell - $(command)</description>
+    <group>shellm,engagement,tripwire,attack,credential_access,</group>
+  </rule>
+
   <rule id="100315" level="5">
     <if_sid>100314</if_sid>
     <field name="command" type="pcre2">(?i)\b(whoami|id|uname|hostname|netstat|ss|ifconfig|ip\s+a|ps\s|lscpu|cat\s+/etc/(passwd|issue|os-release))\b</field>
     <description>shelLM recon/discovery from $(srcip): $(command)</description>
-    <group>shellm,attack,recon,discovery,shellm_recon,</group>
+    <group>shellm,attack,recon,discovery,hp_recon,</group>
   </rule>
 
   <rule id="100316" level="7">
     <if_sid>100314</if_sid>
     <field name="command" type="pcre2">(?i)(cat|less|more|head|tail)\s+.*(shadow|id_rsa|\.ssh|credentials|\.aws|\.env|backup.*\.sql)</field>
     <description>shelLM credential access from $(srcip): $(command)</description>
-    <group>shellm,attack,credential_access,shellm_deep,</group>
+    <group>shellm,attack,credential_access,deep_attack,</group>
   </rule>
 
   <rule id="100317" level="7">
     <if_sid>100314</if_sid>
     <field name="command" type="pcre2">(?i)(?:^|[;&amp;|]\s*|\bsudo\s+)(wget|curl|scp|tftp|nc|ncat|socat)\b</field>
     <description>shelLM ingress/tool transfer from $(srcip): $(command)</description>
-    <group>shellm,attack,command_control,shellm_deep,</group>
+    <group>shellm,attack,command_control,deep_attack,</group>
   </rule>
 
   <rule id="100318" level="8">
     <if_sid>100314</if_sid>
     <field name="command" type="pcre2">(?i)(?:^|[;&amp;|]\s*|\bsudo\s+)(useradd|adduser|usermod|chpasswd|crontab|update-rc\.d)\b|authorized_keys|systemctl\s+enable</field>
     <description>shelLM persistence attempt from $(srcip): $(command)</description>
-    <group>shellm,attack,persistence,shellm_deep,</group>
+    <group>shellm,attack,persistence,deep_attack,</group>
   </rule>
 
   <rule id="100319" level="8">
     <if_sid>100314</if_sid>
     <field name="command" type="pcre2">(?i)(history\s+-c|shred|rm\s+-rf\s+/var/log|:\s*&gt;\s*/var/log|&gt;\s*/var/log/auth\.log|unset\s+HISTFILE)</field>
     <description>shelLM defense evasion (log/history wipe) from $(srcip): $(command)</description>
-    <group>shellm,attack,defense_evasion,shellm_deep,</group>
+    <group>shellm,attack,defense_evasion,deep_attack,</group>
   </rule>
 
-  <!-- Tiers for the LLM honeypot, mirroring 100400/100401 on the static box.
-       These get what the snoopy tiers could not: shelLM events carry the session
-       srcip, so the correlation keys on <same_source_ip/> instead of trusting
-       that only one attacker is in the lab. That is also why the shellm_* groups
-       stay out of "deep_attack" - each honeypot tiers on its own evidence, and an
-       attacker who only ever touches the LLM shell still gets classified. -->
-  <rule id="100320" level="8" frequency="3" timeframe="120">
-    <if_matched_sid>100315</if_matched_sid>
-    <same_source_ip/>
-    <description>Attacker tier OPPORTUNIST (shelLM): repeated recon in the LLM shell from $(srcip).</description>
-    <group>shellm,engagement,tier_opportunist,</group>
-  </rule>
-
-  <rule id="100321" level="12" frequency="2" timeframe="120">
-    <if_matched_group>shellm_deep</if_matched_group>
-    <same_source_ip/>
-    <description>Attacker tier SKILLED (shelLM): multiple beyond-recon actions in the LLM shell from $(srcip).</description>
-    <group>shellm,engagement,tier_skilled,</group>
-  </rule>
 
 </group>
 
@@ -200,7 +195,7 @@
     <if_sid>100416</if_sid>
     <field name="command" type="pcre2">(?i)(?:^|[;&amp;|]\s*|\bsudo\s+)(whoami|id|uname|hostname|netstat|ss|ifconfig|ip\s+a|ps\b|lscpu|cat\s+/etc/(passwd|issue|os-release))\b</field>
     <description>Honeypot recon/discovery: $(command)</description>
-    <group>attack,recon,discovery,</group>
+    <group>attack,recon,discovery,hp_recon,</group>
   </rule>
 
   <!-- Credential access: reading secrets. -->
@@ -240,19 +235,31 @@
 <!--
   Phase C2 — attacker sophistication tiers (native Wazuh correlation).
   Fold the per-command category hits into tiers by frequency within a window.
-  Command events carry no srcip (snoopy is exec-level), so we can't correlate on
-  <same_source_ip/>. Instead we key on honeypot-specific groups: recon (100411)
-  and "deep_attack" (100412-100415, tagged), which the LLM honeypots do NOT emit,
-  so no cross-honeypot bleed and no <same_location/> needed (it behaved
-  inconsistently live). Tier rules use their own "engagement" group so they never
-  count themselves. IDs: 100400-100409.
+
+  ONE tier vocabulary for every honeypot. Each surface tags its category rules
+  with the shared groups - "hp_recon" for enumeration, "deep_attack" for anything
+  beyond it - and these two rules do the escalating. Adding a honeypot means
+  tagging its rules, not copying a tier pair.
+
+  Correlated with <same_source_ip/>, which the original C2 notes said was
+  impossible: snoopy events carry no srcip at exec level. They do now - the
+  honeypot logs SSH_CLIENT (Phase C5) and rule 100416 drops anything without it -
+  and shelLM's per-command feed carries the session IP. So the tiers key on the
+  attacker, not on "there is only ever one of them in the lab", and evidence from
+  BOTH honeypots adds up for the same source: recon on the static box plus
+  credential access in the LLM shell is one escalating attacker, which is exactly
+  right.
+
+  Tier rules sit in their own "engagement" group so they never count themselves.
+  IDs: 100400-100409.
 -->
 <group name="engagement,">
 
   <!-- OPPORTUNIST: repeated host/network recon (enumeration), nothing deeper. -->
   <rule id="100400" level="8" frequency="3" timeframe="120">
-    <if_matched_sid>100411</if_matched_sid>
-    <description>Attacker tier OPPORTUNIST: repeated recon on the honeypot.</description>
+    <if_matched_group>hp_recon</if_matched_group>
+    <same_source_ip/>
+    <description>Attacker tier OPPORTUNIST: repeated recon from $(srcip).</description>
     <group>engagement,tier_opportunist,</group>
   </rule>
 
@@ -261,7 +268,8 @@
        plants lures + holds the ban (see Phase C3). -->
   <rule id="100401" level="12" frequency="2" timeframe="120">
     <if_matched_group>deep_attack</if_matched_group>
-    <description>Attacker tier SKILLED: multiple beyond-recon actions - engage.</description>
+    <same_source_ip/>
+    <description>Attacker tier SKILLED: multiple beyond-recon actions from $(srcip) - engage.</description>
     <group>engagement,tier_skilled,</group>
   </rule>
 

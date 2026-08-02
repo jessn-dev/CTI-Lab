@@ -20,6 +20,14 @@ printf 'OLLAMA_BASE_URL=%s\n' "${OLLAMA_URL}" > /opt/.env
 } > /opt/shelLM/.runenv
 mkdir -p /opt/shelLM/shelLMv2/logs
 
+# Same baseline as the static honeypot: accept established traffic FIRST so the
+# tripwire ban (appended, not inserted) cuts new connections without killing the
+# session that tripped it.
+echo "[shellm] installing baseline firewall (keeps live sessions alive)..."
+iptables -C INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null \
+    || iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null \
+    || echo "[shellm] WARN: could not set conntrack accept rule (no NET_ADMIN?)."
+
 echo "[shellm] starting rsyslog (populates /var/log/auth.log)..."
 rsyslogd
 

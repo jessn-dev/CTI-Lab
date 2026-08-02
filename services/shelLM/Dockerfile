@@ -23,6 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         gnupg \
         lsb-release \
         procps \
+        iptables \
     && rm -rf /var/lib/apt/lists/*
 
 # Wazuh agent (matches the 4.8.0 manager).
@@ -79,11 +80,13 @@ COPY services/shelLM/personalities/ \
 # honeypot; created here so a standalone run (no volume) still has a readable path.
 RUN mkdir -p /var/lib/tier-state
 
-# Phase C-2: shelLM raises its own attacker tiers (100320/100321) from its
-# per-command feed, so it runs the same Active-Response script as the static
-# honeypot and writes to the same shared volume.
+# Phase C-2/C-5: the LLM honeypot feeds the same tier rules as the static box and
+# has its own tripwire (100322), so it runs the same two Active-Response scripts -
+# persona.py to publish the tier, active_defense.py to end the engagement.
 COPY --chmod=0750 src/soar/persona.py /var/ossec/active-response/bin/persona.py
-RUN chown root:wazuh /var/ossec/active-response/bin/persona.py
+COPY --chmod=0750 src/soar/active_defense.py /var/ossec/active-response/bin/active_defense.py
+RUN chown root:wazuh /var/ossec/active-response/bin/persona.py \
+                     /var/ossec/active-response/bin/active_defense.py
 
 # Tell the agent to read auth.log (sshd) + shelLM's session log.
 COPY services/shelLM/agent-shellm.conf /tmp/agent-shellm.conf

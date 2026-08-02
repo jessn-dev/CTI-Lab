@@ -19,6 +19,8 @@ services:
     container_name: shellm
     hostname: shellm
     restart: unless-stopped
+    cap_add:
+      - NET_ADMIN          # the tripwire ban (100322) runs iptables in here
     ports:
       - "2224:22"                # LLM SSH honeypot
     environment:

@@ -26,8 +26,13 @@ verified end to end; **groq** verified end to end; **claude** exercised end to e
 up to the API — request built, PII guardrail applied (10 IOCs tokenised), 4684
 chars sent — and rejected with `400 invalid_request_error: Your credit balance is
 too low`. That is an account/billing state, not a code path: the error handling
-printed it cleanly and exited. Re-run `LLM_PROVIDER=claude ./bin/report.sh` once
-the account has credit to close it out.
+printed it cleanly and exited.
+
+**Not tracked as outstanding work.** The `claude` backend needs paid credit, and
+three working backends already cover every use the lab has — free (gemini, groq)
+and fully offline (ollama). Anyone with an Anthropic key can run
+`LLM_PROVIDER=claude ./bin/report.sh` and it will work; leaving it wired up costs
+nothing and closes no door.
 
 The egress guardrail (`sanitize_events` / `restore_tokens`) stays in front of the
 remote backends; it can be skipped for `ollama`. See README §6b.

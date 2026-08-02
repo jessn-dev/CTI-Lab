@@ -6,19 +6,20 @@ The third member of the adaptive-engagement family. active_defense.py BANS a
 noisy attacker, engage.py plants lures for a skilled one, and this script
 publishes the attacker's *tier* so the LLM honeypot can change its face:
 
-    100400 OPPORTUNIST -> shelLM serves a bare, boring cloud VM persona
-    100401 SKILLED     -> shelLM serves a busy internal jump host, full of threads
+    100400 / 100320 OPPORTUNIST -> shelLM serves a bare, boring cloud VM persona
+    100401 / 100321 SKILLED     -> shelLM serves a busy internal jump host
 
 It writes one small file per source IP into a shared docker volume
-(/var/lib/tier-state, also mounted read-only in the shelLM container). shelLM's
+(/var/lib/tier-state, mounted in both honeypot containers). shelLM's
 run.sh reads it at session start and picks the personality (see
 services/shelLM/run.sh + services/shelLM/personalities/).
 
-Why a shared volume and not an Active Response on the shelLM agent: the tier
-alerts are raised by the *static* honeypot's agent (snoopy command events), so a
-<location>local</location> AR runs here, on the honeypot - not on shelLM. A file
-in a shared volume crosses the gap without needing <location>all</location> or a
-hardcoded agent id.
+Why a shared volume: the static honeypot's tier alerts (100400/100401, from snoopy
+command events) are raised by *its* agent, so a <location>local</location> AR runs
+there - not on shelLM. A file in a shared volume crosses the gap without needing
+<location>all</location> or a hardcoded agent id. shelLM raises its own tiers too
+(100320/100321, from its per-command feed) and runs this same script on its own
+agent, writing to the same volume.
 
 NOTE: absolute shebang (/usr/bin/python3) + absolute paths - wazuh-execd runs
 Active Response scripts with a minimal PATH (same constraint as active_defense.py).
@@ -43,9 +44,14 @@ LOG_FILE = "/var/ossec/logs/active-responses.log"
 TIER_DIR = "/var/lib/tier-state"
 
 # Correlation rule -> tier name. Anything else is ignored.
+# 1004xx = the static honeypot (snoopy commands); 1003xx = the LLM honeypot
+# (shelLM's own per-command feed). Either surface can tier an attacker, and both
+# end up steering the same persona state.
 TIERS = {
     "100400": "OPPORTUNIST",
     "100401": "SKILLED",
+    "100320": "OPPORTUNIST",
+    "100321": "SKILLED",
 }
 
 # The IP becomes a filename, and it arrives from a decoded log line - so it is

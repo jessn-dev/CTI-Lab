@@ -537,13 +537,11 @@ pinned to the same upstream commit. The static honeypot gets this from snoopy
 prompt.
 
 The categories mirror the snoopy ones (recon / credential access / ingress /
-persistence / evasion) but stay in `shellm_*` groups, **not** `deep_attack` — that
-group drives the static box's SKILLED rule (100401), which has no
-`<same_source_ip/>` and would bleed across honeypots. shelLM gets its own tier
-rules instead (`100320`/`100321`), and since its events carry the session IP those
-*do* correlate per source. Verified live: three recon commands raised 100320, two
-beyond-recon commands raised 100321, and `persona.py` published the tier from
-shelLM's own agent.
+persistence / evasion) and carry the **same** `hp_recon` / `deep_attack` groups, so
+they feed the one shared tier pair (100400/100401) rather than a per-honeypot copy
+— see [§7e](#engagement). shelLM also gets its own tripwire, `100322`: the SKILLED
+persona's environment contains the bait `engage.py` plants on the static box, so
+reading it means the same thing and ends the engagement with a ban.
 
 ### Benchmark: shelLM vs beelzebub (Part 2)
 The point of running both is to measure the thing that actually separates them —
@@ -619,17 +617,27 @@ commands (snoopy) ─▶ has an SSH client? ─▶ category rules ─▶ correla
    (100414), evasion (100415).
 4. **Tiering (native Wazuh correlation).** `100400 OPPORTUNIST` = repeated recon;
    `100401 SKILLED` = 2+ beyond-recon actions in a window. No bolt-on scorer — a
-   real SOC escalates with correlation rules. The LLM honeypot tiers on its own
-   evidence too (`100320`/`100321`, from the per-command feed), and those *can*
-   use `<same_source_ip/>` because shelLM events carry the session IP — so an
-   attacker who never touches the static box still gets classified, and
-   `persona.py` runs on shelLM's own agent to publish it.
+   real SOC escalates with correlation rules.
+
+   **One tier vocabulary for every honeypot.** Each surface tags its category
+   rules with the shared `hp_recon` / `deep_attack` groups; these two rules do the
+   escalating. Adding a honeypot means tagging its rules, not copying a tier pair.
+   They now correlate with `<same_source_ip/>` — the original notes called that
+   impossible because snoopy is exec-level, but the honeypot logs `SSH_CLIENT`
+   (Phase C5) and rule 100416 drops anything without it. So evidence from *both*
+   honeypots adds up for one attacker: recon on the static box plus credential
+   access in the LLM shell is one escalating session, which is exactly right.
 5. **Engage.** SKILLED fires `engage.py` (a second Active-Response script): it
    plants decoy lures (`~/.ssh/id_rsa`, `backup_db.sql`, `credentials.txt` — all
    fake) and **does not ban**, keeping the attacker engaged.
 6. **Tripwire + disengage.** Reading a lure trips `100402` (level 13, the loudest
    signal in the lab), which drives `active_defense` to **ban the srcip** — the
-   attacker took the bait, so we cut them off.
+   attacker took the bait, so we cut them off. The LLM honeypot has the same
+   terminal state: its SKILLED persona's environment contains the same bait, so
+   reading it raises `100322` and bans on the shelLM agent (which ships
+   `active_defense.py` and holds `NET_ADMIN`). Without it an engaged attacker on
+   the LLM side would be held forever — engagement with no exit is just a stuck
+   honeypot.
 
 ### Adaptive LLM surface (Phase C-2)
 
@@ -718,13 +726,14 @@ or with `./bin/logs.sh json`.
 |-------|------|
 | `services/honeypot/` (snoopy) | command auditing → `/var/log/snoopy.log` |
 | `services/wazuh-config/wazuh_manager/local_decoder.xml` | parses the command log (+ srcip) |
-| `services/wazuh-config/wazuh_manager/local_rules.xml` | command base 100410, attacker-context gate 100416, categories 100411-100415, tiers 100400/100401, tripwire 100402 |
+| `services/wazuh-config/wazuh_manager/local_rules.xml` | command base 100410, attacker-context gate 100416, categories 100411-100415, shared tiers 100400/100401, tripwires 100402 (static) + 100322 (LLM) |
 | `src/soar/engage.py` | Active Response: plant lures on SKILLED, hold the ban |
 | `src/soar/persona.py` | Active Response: publish the tier to the `tier-state` volume (C-2) |
 | `services/shelLM/personalities/` | `Tier_skilled` / `Tier_opportunist` personas |
 | `src/redteam/simulate_attacks.py --profile` | skilled vs noise demo; the skilled run ends in the LLM honeypot (Phase 8) |
 | `src/redteam/persona_check.py` | scores the personas per tier (fidelity / leakage / consistency / says-no) |
-| `bin/test_rules.sh` | rule regression test: 18 canned log lines, asserted rule by rule |
+| `bin/test_rules.sh` | rule regression test: 20 canned log lines, asserted rule by rule |
+| `bin/test_correlation.sh` | tier regression test: injects events, asserts the correlation rules fired |
 
 > **Honest notes.** Tiering is heuristic (rule combos), not prediction. `engage`
 > has a 900 s per-IP dedup (it won't re-plant for the same attacker within the

@@ -183,6 +183,28 @@ oversell it.
 - Keys on source IP: tier up from one address, visit shelLM from another, and you
   get the default box. Honest limitation, not a bug.
 
+**Phase C-2 follow-ups (2026-08-02, part 3).**
+- **One tier vocabulary.** Both honeypots now tag `hp_recon` / `deep_attack` and
+  feed the same 100400/100401 pair (the per-honeypot 100320/100321 are gone). The
+  tiers correlate with `<same_source_ip/>`, which the original C2 notes ruled out:
+  snoopy carries `SSH_CLIENT` since C5 and rule 100416 drops anything without it.
+  Evidence from both surfaces now adds up for one attacker.
+- **The LLM honeypot can disengage.** New tripwire `100322`: the SKILLED persona's
+  environment holds the same bait `engage.py` plants, so reading it bans the
+  source on shelLM's own agent (the image ships `active_defense.py` + `iptables`,
+  the container gets `NET_ADMIN`, and the entrypoint installs the same
+  ESTABLISHED-first baseline so the tripped session survives while new connections
+  are dropped). Verified live: `attack.sh --profile skilled` Phase 8 read a lure in
+  the LLM shell -> 100322 -> `BANNED malicious IP -> 192.168.65.1`.
+- **`bin/test_correlation.sh`** — the tier rules that `wazuh-logtest` cannot reach.
+  Injects events into the honeypots' own logs and asserts the alerts: 3 recon ->
+  OPPORTUNIST, 2 beyond-recon -> SKILLED, LLM feed alone -> both, and evidence
+  split across the two honeypots for one IP -> SKILLED. 4/4.
+  *Two gotchas worth keeping:* `docker exec` needs `-i` or the injected line never
+  reaches the container, and Wazuh's frequency counter does **not** credit two
+  events landing in the same second — a pair 1s apart produced both category
+  alerts and no tier, the same pair spaced out fires every time.
+
 **Phase C-2 follow-ups (2026-08-02, part 2).**
 - **Regex tightening.** The short recon/ingress tokens (`id`, `nc`, `ps`, `ss`)
   are now anchored to command position (start of line, after `;`/`&`/`|`, or after

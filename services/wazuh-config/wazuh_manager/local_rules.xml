@@ -106,14 +106,14 @@
 
   <rule id="100317" level="7">
     <if_sid>100314</if_sid>
-    <field name="command" type="pcre2">(?i)\b(wget|curl|scp|tftp|nc|ncat|socat)\b</field>
+    <field name="command" type="pcre2">(?i)(?:^|[;&amp;|]\s*|\bsudo\s+)(wget|curl|scp|tftp|nc|ncat|socat)\b</field>
     <description>shelLM ingress/tool transfer from $(srcip): $(command)</description>
     <group>shellm,attack,command_control,shellm_deep,</group>
   </rule>
 
   <rule id="100318" level="8">
     <if_sid>100314</if_sid>
-    <field name="command" type="pcre2">(?i)(useradd|adduser|usermod|chpasswd|crontab|authorized_keys|systemctl\s+enable|update-rc\.d)</field>
+    <field name="command" type="pcre2">(?i)(?:^|[;&amp;|]\s*|\bsudo\s+)(useradd|adduser|usermod|chpasswd|crontab|update-rc\.d)\b|authorized_keys|systemctl\s+enable</field>
     <description>shelLM persistence attempt from $(srcip): $(command)</description>
     <group>shellm,attack,persistence,shellm_deep,</group>
   </rule>
@@ -123,6 +123,26 @@
     <field name="command" type="pcre2">(?i)(history\s+-c|shred|rm\s+-rf\s+/var/log|:\s*&gt;\s*/var/log|&gt;\s*/var/log/auth\.log|unset\s+HISTFILE)</field>
     <description>shelLM defense evasion (log/history wipe) from $(srcip): $(command)</description>
     <group>shellm,attack,defense_evasion,shellm_deep,</group>
+  </rule>
+
+  <!-- Tiers for the LLM honeypot, mirroring 100400/100401 on the static box.
+       These get what the snoopy tiers could not: shelLM events carry the session
+       srcip, so the correlation keys on <same_source_ip/> instead of trusting
+       that only one attacker is in the lab. That is also why the shellm_* groups
+       stay out of "deep_attack" - each honeypot tiers on its own evidence, and an
+       attacker who only ever touches the LLM shell still gets classified. -->
+  <rule id="100320" level="8" frequency="3" timeframe="120">
+    <if_matched_sid>100315</if_matched_sid>
+    <same_source_ip/>
+    <description>Attacker tier OPPORTUNIST (shelLM): repeated recon in the LLM shell from $(srcip).</description>
+    <group>shellm,engagement,tier_opportunist,</group>
+  </rule>
+
+  <rule id="100321" level="12" frequency="2" timeframe="120">
+    <if_matched_group>shellm_deep</if_matched_group>
+    <same_source_ip/>
+    <description>Attacker tier SKILLED (shelLM): multiple beyond-recon actions in the LLM shell from $(srcip).</description>
+    <group>shellm,engagement,tier_skilled,</group>
   </rule>
 
 </group>
@@ -142,27 +162,50 @@
     <options>no_full_log</options>
   </rule>
 
+  <!-- Attacker context: the command carries an SSH client IP (snoopy logs
+       SSH_CLIENT, empty for local/system execs). EVERYTHING below hangs off this,
+       because the honeypot's own housekeeping otherwise trips the tiers: a
+       container running `update-rc.d dbus defaults` and
+       `update-alternatives --install /bin/nc ...` scored persistence + ingress
+       and raised SKILLED with no attacker present (and no srcip to act on).
+       Real attacker commands - including paramiko's non-interactive exec - all
+       carry SSH_CLIENT, so nothing is lost.
+
+       Matched on the raw snoopy line (`cli=<ip>`), not on <field name="srcip">:
+       srcip is a *static* field in Wazuh, so a <field> test on it fails rule
+       loading with "Field 'srcip' is static". -->
+  <rule id="100416" level="2">
+    <if_sid>100410</if_sid>
+    <match type="pcre2">cli=\d+\.\d+\.\d+\.\d+</match>
+    <description>Honeypot: command executed by an SSH client - $(command)</description>
+    <options>no_full_log</options>
+  </rule>
+
   <!-- Phase C4 TRIPWIRE: a command references a planted lure (see engage.py).
        Checked before the generic category rules so it wins on a lure hit. This
        is the loudest signal in the lab - the attacker took the bait. -->
   <rule id="100402" level="13">
-    <if_sid>100410</if_sid>
+    <if_sid>100416</if_sid>
     <field name="command" type="pcre2">(?i)(/root/\.ssh/id_rsa|/root/backup_db\.sql|/root/credentials\.txt)</field>
     <description>TRIPWIRE: attacker accessed a planted lure - $(command)</description>
     <group>engagement,tripwire,attack,credential_access,</group>
   </rule>
 
-  <!-- Recon / discovery: enumerating the host, users, network. -->
+  <!-- Recon / discovery: enumerating the host, users, network.
+       Short tokens (id, ss, ps, ip) are anchored to COMMAND POSITION - start of
+       line, after a ;/&/| separator, or after sudo. Unanchored, `\bid\b` matched
+       any argument containing the word (e.g. a JSON blob with "id":"100401") and
+       `\bnc\b` matched `update-alternatives --install /bin/nc`. -->
   <rule id="100411" level="5">
-    <if_sid>100410</if_sid>
-    <field name="command" type="pcre2">(?i)\b(whoami|id|uname|hostname|netstat|ss|ifconfig|ip\s+a|ps\s|lscpu|cat\s+/etc/(passwd|issue|os-release))\b</field>
+    <if_sid>100416</if_sid>
+    <field name="command" type="pcre2">(?i)(?:^|[;&amp;|]\s*|\bsudo\s+)(whoami|id|uname|hostname|netstat|ss|ifconfig|ip\s+a|ps\b|lscpu|cat\s+/etc/(passwd|issue|os-release))\b</field>
     <description>Honeypot recon/discovery: $(command)</description>
     <group>attack,recon,discovery,</group>
   </rule>
 
   <!-- Credential access: reading secrets. -->
   <rule id="100412" level="7">
-    <if_sid>100410</if_sid>
+    <if_sid>100416</if_sid>
     <field name="command" type="pcre2">(?i)(cat|less|more|head|tail)\s+.*(shadow|id_rsa|\.ssh|credentials|\.aws|\.env|backup.*\.sql)</field>
     <description>Honeypot credential access: $(command)</description>
     <group>attack,credential_access,deep_attack,</group>
@@ -170,23 +213,23 @@
 
   <!-- Ingress tool transfer: pulling payloads onto the box. -->
   <rule id="100413" level="7">
-    <if_sid>100410</if_sid>
-    <field name="command" type="pcre2">(?i)\b(wget|curl|scp|tftp|nc|ncat|socat)\b</field>
+    <if_sid>100416</if_sid>
+    <field name="command" type="pcre2">(?i)(?:^|[;&amp;|]\s*|\bsudo\s+)(wget|curl|scp|tftp|nc|ncat|socat)\b</field>
     <description>Honeypot ingress/tool transfer: $(command)</description>
     <group>attack,command_control,deep_attack,</group>
   </rule>
 
   <!-- Persistence: backdoor accounts, cron, keys, services. -->
   <rule id="100414" level="8">
-    <if_sid>100410</if_sid>
-    <field name="command" type="pcre2">(?i)(useradd|adduser|usermod|chpasswd|crontab|authorized_keys|systemctl\s+enable|update-rc\.d)</field>
+    <if_sid>100416</if_sid>
+    <field name="command" type="pcre2">(?i)(?:^|[;&amp;|]\s*|\bsudo\s+)(useradd|adduser|usermod|chpasswd|crontab|update-rc\.d)\b|authorized_keys|systemctl\s+enable</field>
     <description>Honeypot persistence attempt: $(command)</description>
     <group>attack,persistence,deep_attack,</group>
   </rule>
 
   <!-- Defense evasion: wiping logs / history. -->
   <rule id="100415" level="8">
-    <if_sid>100410</if_sid>
+    <if_sid>100416</if_sid>
     <field name="command" type="pcre2">(?i)(history\s+-c|shred|rm\s+-rf\s+/var/log|:\s*>\s*/var/log|&gt;\s*/var/log/auth\.log|unset\s+HISTFILE)</field>
     <description>Honeypot defense evasion (log/history wipe): $(command)</description>
     <group>attack,defense_evasion,deep_attack,</group>

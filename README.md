@@ -537,10 +537,13 @@ pinned to the same upstream commit. The static honeypot gets this from snoopy
 prompt.
 
 The categories mirror the snoopy ones (recon / credential access / ingress /
-persistence / evasion) but stay in `shellm_*` groups and are **not** tagged
-`deep_attack` — that group drives the SKILLED correlation rule (100401), which has
-no `<same_source_ip/>` and would bleed across honeypots. Giving the LLM honeypot
-its own tier rule is a separate, deliberate step.
+persistence / evasion) but stay in `shellm_*` groups, **not** `deep_attack` — that
+group drives the static box's SKILLED rule (100401), which has no
+`<same_source_ip/>` and would bleed across honeypots. shelLM gets its own tier
+rules instead (`100320`/`100321`), and since its events carry the session IP those
+*do* correlate per source. Verified live: three recon commands raised 100320, two
+beyond-recon commands raised 100321, and `persona.py` published the tier from
+shelLM's own agent.
 
 ### Benchmark: shelLM vs beelzebub (Part 2)
 The point of running both is to measure the thing that actually separates them —
@@ -591,10 +594,10 @@ prediction.
 
 ### How it works
 ```
-commands (snoopy) ─▶ category rules ─▶ correlation tiers ─▶ Active Response
- recon/cred/            100411-100415     100400 OPPORTUNIST   ban (noise)
- ingress/persist/                         100401 SKILLED ──▶ engage.py: plant lures,
- evasion                                                     hold the ban
+commands (snoopy) ─▶ has an SSH client? ─▶ category rules ─▶ correlation tiers ─▶ Active Response
+                       100416 gate          100411-100415       100400 OPPORTUNIST   ban (noise)
+                                                           100401 SKILLED ──▶ engage.py:
+                                                                           plant lures, hold the ban
                                                                     │
    attacker reads a lure ─▶ 100402 TRIPWIRE (lvl 13) ─▶ disengage: ban the srcip
 ```
@@ -603,16 +606,28 @@ commands (snoopy) ─▶ category rules ─▶ correlation tiers ─▶ Active R
    command run on the honeypot — including non-interactive `exec` and recon that
    leaves no FIM trace (`cat /etc/shadow`, `uname`). It also captures the SSH
    client IP, so command events carry `srcip`.
-2. **Classification.** Local rules sort each command into a MITRE-ish category:
+2. **Attacker context (100416).** Only commands carrying an SSH client IP reach
+   the category rules. Without this gate the honeypot tiers *itself*: its own
+   `update-rc.d dbus defaults` and `update-alternatives --install /bin/nc …`
+   scored persistence + ingress and raised SKILLED with no attacker present and
+   no `srcip` to act on. Everything an attacker runs — including paramiko's
+   non-interactive `exec` — carries `SSH_CLIENT`, so nothing real is lost.
+   (Matched on the raw snoopy line: `srcip` is a *static* field in Wazuh, and a
+   `<field>` test on it refuses to load.)
+3. **Classification.** Local rules sort each command into a MITRE-ish category:
    recon (100411), credential access (100412), ingress (100413), persistence
    (100414), evasion (100415).
-3. **Tiering (native Wazuh correlation).** `100400 OPPORTUNIST` = repeated recon;
+4. **Tiering (native Wazuh correlation).** `100400 OPPORTUNIST` = repeated recon;
    `100401 SKILLED` = 2+ beyond-recon actions in a window. No bolt-on scorer — a
-   real SOC escalates with correlation rules.
-4. **Engage.** SKILLED fires `engage.py` (a second Active-Response script): it
+   real SOC escalates with correlation rules. The LLM honeypot tiers on its own
+   evidence too (`100320`/`100321`, from the per-command feed), and those *can*
+   use `<same_source_ip/>` because shelLM events carry the session IP — so an
+   attacker who never touches the static box still gets classified, and
+   `persona.py` runs on shelLM's own agent to publish it.
+5. **Engage.** SKILLED fires `engage.py` (a second Active-Response script): it
    plants decoy lures (`~/.ssh/id_rsa`, `backup_db.sql`, `credentials.txt` — all
    fake) and **does not ban**, keeping the attacker engaged.
-5. **Tripwire + disengage.** Reading a lure trips `100402` (level 13, the loudest
+6. **Tripwire + disengage.** Reading a lure trips `100402` (level 13, the loudest
    signal in the lab), which drives `active_defense` to **ban the srcip** — the
    attacker took the bait, so we cut them off.
 
@@ -647,23 +662,43 @@ different machine. Each session logs its tier + persona, which the SIEM raises a
 
 `src/redteam/persona_check.py` measures it, the same way `benchmark.py` measures
 the honeypots against each other: it publishes each tier through the real
-Active-Response script, opens a session, and scores **fidelity** (expected persona
-markers seen), **leakage** (the *other* persona's markers bleeding in — should be
-0) and a **canary** write→read-back→listing probe, so a richer environment isn't
-bought by losing the session consistency shelLM exists for.
+Active-Response script, opens `--trials` sessions, and scores
+
+- **fidelity** — expected persona markers seen (mean, with every trial's score
+  printed beside it: one session against a 3B model is an anecdote),
+- **leakage** — the *other* persona's markers bleeding in, and
+- **canary** — write → read-back → listing agrees, so a richer environment isn't
+  bought by losing the session consistency shelLM exists for,
+- **says no** — a nonexistent binary and a nonexistent file must still error.
 
 ```bash
-python3 src/redteam/persona_check.py            # all three tiers → reports/
+python3 src/redteam/persona_check.py --trials 3       # → reports/
 ```
 
-A representative run (llama3.2:3b): SKILLED served `Tier_skilled` with
-`corp.local`/`jump-01` markers, OPPORTUNIST served `Tier_opportunist` (bare box,
-empty `/root`), leakage **0** both ways. Fidelity swings run to run on a 3B model
-(2/7 to 5/7 across runs) — the report prints what it saw rather than smoothing it.
-The check earned its keep immediately: the first run caught the OPPORTUNIST prompt
-answering `bash: echo: command not found`, because "nothing here is interesting"
-had bled into *command availability*. The persona now scopes absence to content
-only.
+Three trials per tier on `llama3.2:3b`:
+
+| Tier | Persona | Fidelity | Leakage | Canary read-back | `ls` agrees | Says no |
+|------|---------|----------|---------|------------------|-------------|---------|
+| SKILLED | `Tier_skilled` | 6/7 (6,6,6) | 0 | 3/3 | 3/3 | 3/3 |
+| OPPORTUNIST | `Tier_opportunist` | 3/3 (3,3,3) | 0 | 3/3 | 3/3 | 3/3 |
+| none | `Eman_v1` (upstream) | n/a | 0 | 0/3 | 0/3 | 3/3 |
+
+The **says no** probes exist because a persona that tells the model to keep an
+attacker digging can stop saying "no" at all. Both custom personas hold the line;
+so does the upstream default. The check has now caught two real bugs:
+
+- the OPPORTUNIST prompt answered `bash: echo: command not found` — "nothing here
+  is interesting" had bled into *command availability*. Absence is now scoped to
+  content only, and its canary read-back went 0/3 → 3/3.
+- the *lab* was tiering itself (see below), which corrupted a whole measurement
+  run before the numbers above could be trusted.
+
+It also drove a third fix: `Tier_opportunist` scored 1/3 on `ls` agreement — it
+read back the file it had just written but usually left it out of the listing.
+The prompt now says outright that "nothing interesting here" describes what the
+box *started* with and never erases something the user just created; that took it
+to 3/3. Note the upstream `Eman_v1` persona still fails the canary 0/3 where both
+tier personas pass — the same consistency property `benchmark.py` scores.
 
 ### Try it
 ```bash
@@ -683,12 +718,13 @@ or with `./bin/logs.sh json`.
 |-------|------|
 | `services/honeypot/` (snoopy) | command auditing → `/var/log/snoopy.log` |
 | `services/wazuh-config/wazuh_manager/local_decoder.xml` | parses the command log (+ srcip) |
-| `services/wazuh-config/wazuh_manager/local_rules.xml` | command categories 100410-100415, tiers 100400/100401, tripwire 100402 |
+| `services/wazuh-config/wazuh_manager/local_rules.xml` | command base 100410, attacker-context gate 100416, categories 100411-100415, tiers 100400/100401, tripwire 100402 |
 | `src/soar/engage.py` | Active Response: plant lures on SKILLED, hold the ban |
 | `src/soar/persona.py` | Active Response: publish the tier to the `tier-state` volume (C-2) |
 | `services/shelLM/personalities/` | `Tier_skilled` / `Tier_opportunist` personas |
 | `src/redteam/simulate_attacks.py --profile` | skilled vs noise demo; the skilled run ends in the LLM honeypot (Phase 8) |
-| `src/redteam/persona_check.py` | scores the personas per tier (fidelity / leakage / consistency) |
+| `src/redteam/persona_check.py` | scores the personas per tier (fidelity / leakage / consistency / says-no) |
+| `bin/test_rules.sh` | rule regression test: 18 canned log lines, asserted rule by rule |
 
 > **Honest notes.** Tiering is heuristic (rule combos), not prediction. `engage`
 > has a 900 s per-IP dedup (it won't re-plant for the same attacker within the

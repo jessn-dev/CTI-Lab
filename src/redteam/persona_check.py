@@ -15,14 +15,20 @@ then SSHes into shelLM and scores the session on:
   leakage   markers of the *other* persona showing up (should be 0)
   canary    one write -> read-back -> listing probe, so a richer persona is not
             bought with a loss of the session consistency shelLM exists for
+  says no   a nonexistent binary and a nonexistent file must still error - a
+            persona that tells the model to keep the attacker digging can stop
+            saying "no" at all (the OPPORTUNIST persona once had the mirror bug
+            and refused a real `echo`)
 
-Honest framing: this is a small, single-run probe of a 3B model, not a
-statistical evaluation. It answers "did the surface actually change, and did it
-stay coherent", not "how good is the deception".
+Honest framing: a handful of sessions against a 3B model, not a statistical
+evaluation. It answers "did the surface actually change, did it stay coherent,
+and does it still say no", not "how good is the deception". Fidelity swings
+between trials, which is why the report prints every trial's score next to the
+mean instead of smoothing it away.
 
-  python3 src/redteam/persona_check.py                 # all three tiers
-  python3 src/redteam/persona_check.py --tiers SKILLED
-  python3 src/redteam/persona_check.py --no-canary   # faster, drops the consistency probe
+  python3 src/redteam/persona_check.py                 # 3 trials x 3 tiers
+  python3 src/redteam/persona_check.py --tiers SKILLED --trials 5
+  python3 src/redteam/persona_check.py --no-canary     # faster, drops the consistency probe
 
 Needs shelLM up (compose/shellm.yml) and, to set tiers, the honeypot container.
 Writes a scored Markdown report + transcripts to reports/.
@@ -217,6 +223,15 @@ def probe_session(tier, canary_probe=True):
     if canary_probe:
         cmds += [f"echo {canary} > /tmp/{fname}", f"cat /tmp/{fname}", "ls /tmp"]
 
+    # Discipline probes: a persona that tells the model to keep the attacker
+    # digging can bleed into never saying "no" - inventing a binary that does not
+    # exist, or narrating a file that was never there. The OPPORTUNIST persona had
+    # the mirror of this bug (it refused a real `echo`), so both directions get
+    # measured, on every tier.
+    ghost_cmd = f"zqx_{rand()}"
+    ghost_file = f"/root/{rand()}_notthere.txt"
+    cmds += [ghost_cmd, f"cat {ghost_file}"]
+
     latencies = []
     for cmd in cmds:
         t0 = time.time()
@@ -235,10 +250,18 @@ def probe_session(tier, canary_probe=True):
     other = "OPPORTUNIST" if tier == "SKILLED" else "SKILLED"
     leaked = [m for m in TIERS[other]["markers"] if m in text] if markers else []
 
+    ghost_cmd_out = transcript[-2][1].lower()
+    ghost_file_out = transcript[-1][1].lower()
+    says_no_cmd = "not found" in ghost_cmd_out
+    says_no_file = ("no such file" in ghost_file_out
+                    or "not found" in ghost_file_out)
+
     readback = ls_agrees = None
     if canary_probe:
-        readback = canary.lower() in transcript[-2][1].lower()
-        ls_agrees = fname.lower() in transcript[-1][1].lower()
+        # Counting back past the two discipline probes: ... write, read, list,
+        # ghost_cmd, ghost_file.
+        readback = canary.lower() in transcript[-4][1].lower()
+        ls_agrees = fname.lower() in transcript[-3][1].lower()
 
     return {
         "tier": tier,
@@ -250,6 +273,8 @@ def probe_session(tier, canary_probe=True):
         "leaked": leaked,
         "readback": readback,
         "ls_agrees": ls_agrees,
+        "says_no_cmd": says_no_cmd,
+        "says_no_file": says_no_file,
     }
 
 
@@ -267,47 +292,91 @@ def persona_logged():
     return f"{ev.get('tier', '?')}/{ev.get('persona', '?')}"
 
 
-def emit_report(runs, outdir):
+def summarize(tier, trials):
+    """Fold N trials of one tier into the numbers worth reporting."""
+    exp = len(TIERS[tier]["markers"])
+    fids = [len(t["markers_hit"]) for t in trials]
+
+    def rate(key):
+        vals = [t[key] for t in trials if t[key] is not None]
+        return (sum(1 for v in vals if v), len(vals))
+
+    return {
+        "tier": tier,
+        "served": trials[-1]["served"],
+        "n": len(trials),
+        "expected": exp,
+        "fidelity_mean": sum(fids) / len(fids),
+        "fidelity_each": fids,
+        "leaked_total": sum(len(t["leaked"]) for t in trials),
+        "readback": rate("readback"),
+        "ls_agrees": rate("ls_agrees"),
+        "says_no_cmd": rate("says_no_cmd"),
+        "says_no_file": rate("says_no_file"),
+        "warmup": sum(t["warmup"] for t in trials) / len(trials),
+        "latency": sum(t["latency"] for t in trials) / len(trials),
+        "markers_union": sorted({m for t in trials for m in t["markers_hit"]}),
+        "leaked_union": sorted({m for t in trials for m in t["leaked"]}),
+        "trials": trials,
+    }
+
+
+def emit_report(summaries, outdir, trials_n):
     ts = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
     path = os.path.join(outdir, f"persona_check_{ts}.md")
+
+    def frac(pair):
+        hit, total = pair
+        return f"{hit}/{total}" if total else "-"
+
     lines = [
         "# Adaptive persona check (Phase C-2)",
         "",
-        f"Generated {datetime.utcnow().isoformat()}Z · shelLM on port {PORT}",
+        f"Generated {datetime.utcnow().isoformat()}Z · shelLM on port {PORT} · "
+        f"{trials_n} trial(s) per tier",
         "",
-        "Same honeypot, same model, three attacker tiers. Fidelity = expected",
-        "persona markers seen; leakage = the other persona's markers seen;",
-        "canary = write -> read back -> listing agrees (shelLM's core property).",
+        "Same honeypot, same model, one persona per attacker tier.",
+        "",
+        "- **Fidelity** — expected persona markers seen (mean over trials).",
+        "- **Leakage** — the *other* persona's markers bleeding in. Want 0.",
+        "- **Canary** — write -> read back -> listing agrees: shelLM's core property,",
+        "  which a richer persona must not cost us.",
+        "- **Says no** — a persona that keeps the attacker digging can stop saying",
+        "  \"no\" at all. These probe a nonexistent binary and a nonexistent file;",
+        "  a real shell errors on both. (The OPPORTUNIST persona once had the mirror",
+        "  bug: it refused a *real* `echo`.)",
         "",
         "A low-value persona is judged mainly by *absence*: its fidelity count is",
-        "small by design, and the number that matters is leakage 0 (none of the",
-        "rich box's markers bleeding in).",
+        "small by design, and the number that matters is leakage 0.",
         "",
-        "| Tier | Persona served | Fidelity | Leakage | Canary read-back | `ls` agrees | Warm-up | Mean latency |",
-        "|------|----------------|----------|---------|------------------|-------------|---------|--------------|",
+        "| Tier | Persona served | Fidelity | Leakage | Canary read-back | `ls` agrees | Says no: cmd | Says no: file | Warm-up | Mean latency |",
+        "|------|----------------|----------|---------|------------------|-------------|--------------|---------------|---------|--------------|",
     ]
-    for r in runs:
-        exp = len(r["markers_expected"])
-        fid = f"{len(r['markers_hit'])}/{exp}" if exp else "n/a"
-        rb = {True: "yes", False: "NO", None: "-"}[r["readback"]]
-        la = {True: "yes", False: "NO", None: "-"}[r["ls_agrees"]]
+    for s in summaries:
+        fid = (f"{s['fidelity_mean']:.1f}/{s['expected']}" if s["expected"] else "n/a")
+        if s["expected"] and s["n"] > 1:
+            fid += " (" + ",".join(str(f) for f in s["fidelity_each"]) + ")"
         lines.append(
-            f"| {r['tier']} | {r['served']} | {fid} | {len(r['leaked'])} | {rb} | "
-            f"{la} | {r['warmup']:.1f}s | {r['latency']:.1f}s |")
+            f"| {s['tier']} | {s['served']} | {fid} | {s['leaked_total']} | "
+            f"{frac(s['readback'])} | {frac(s['ls_agrees'])} | "
+            f"{frac(s['says_no_cmd'])} | {frac(s['says_no_file'])} | "
+            f"{s['warmup']:.1f}s | {s['latency']:.1f}s |")
 
-    lines += ["", "## Markers seen", ""]
-    for r in runs:
-        lines.append(f"- **{r['tier']}** ({r['served']}): "
-                     f"{', '.join(r['markers_hit']) or '(none)'}"
-                     + (f" · leaked: {', '.join(r['leaked'])}" if r["leaked"] else ""))
+    lines += ["", "## Markers seen (union over trials)", ""]
+    for s in summaries:
+        lines.append(f"- **{s['tier']}** ({s['served']}): "
+                     f"{', '.join(s['markers_union']) or '(none)'}"
+                     + (f" · leaked: {', '.join(s['leaked_union'])}"
+                        if s["leaked_union"] else ""))
 
     lines += ["", "## Transcripts", ""]
-    for r in runs:
-        lines += [f"### {r['tier']} → {r['served']}", "", "```"]
-        for cmd, out in r["transcript"]:
-            lines.append(f"$ {cmd}")
-            lines.append(out.strip())
-        lines += ["```", ""]
+    for s in summaries:
+        for i, t in enumerate(s["trials"], 1):
+            lines += [f"### {s['tier']} → {s['served']} (trial {i})", "", "```"]
+            for cmd, out in t["transcript"]:
+                lines.append(f"$ {cmd}")
+                lines.append(out.strip())
+            lines += ["```", ""]
 
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
@@ -318,6 +387,9 @@ def main():
     ap = argparse.ArgumentParser(description="Score shelLM's adaptive personas")
     ap.add_argument("--tiers", nargs="+", default=["SKILLED", "OPPORTUNIST", "NONE"],
                     choices=list(TIERS), help="which tiers to probe")
+    ap.add_argument("--trials", type=int, default=3,
+                    help="sessions per tier (a 3B model varies run to run; one "
+                         "session is an anecdote, not a measurement)")
     ap.add_argument("--no-canary", action="store_true",
                     help="skip the consistency probe (faster)")
     ap.add_argument("--outdir", default="reports")
@@ -325,29 +397,44 @@ def main():
 
     os.makedirs(args.outdir, exist_ok=True)
     bootstrap_srcip()
-    runs = []
+
+    summaries = []
     for tier in args.tiers:
-        print(f"\n=== tier {tier} ===")
+        print(f"\n=== tier {tier} ({args.trials} trial(s)) ===")
         if not set_tier(tier):
             print(f"[!] could not publish tier {tier}; skipping.")
             continue
-        # The tier is read at login, so nothing to wait for beyond the connect.
-        try:
-            r = probe_session(tier, canary_probe=not args.no_canary)
-        except Exception as exc:
-            print(f"[!] session failed for {tier}: {exc}")
-            continue
-        r["served"] = persona_logged()
-        runs.append(r)
-        exp = len(r["markers_expected"])
-        print(f"[*] served: {r['served']}  fidelity: {len(r['markers_hit'])}/{exp}"
-              f"  leaked: {len(r['leaked'])}  warmup: {r['warmup']:.1f}s")
 
-    if not runs:
+        trials = []
+        for i in range(1, args.trials + 1):
+            # The tier is read at login, so nothing to wait for beyond the connect.
+            try:
+                r = probe_session(tier, canary_probe=not args.no_canary)
+            except Exception as exc:
+                print(f"[!] trial {i} failed for {tier}: {exc}")
+                continue
+            r["served"] = persona_logged()
+            trials.append(r)
+            exp = len(r["markers_expected"])
+            print(f"[*] trial {i}: served {r['served']}  "
+                  f"fidelity {len(r['markers_hit'])}/{exp}  "
+                  f"leaked {len(r['leaked'])}  "
+                  f"says-no {int(r['says_no_cmd'])}/{int(r['says_no_file'])}")
+
+        if trials:
+            summaries.append(summarize(tier, trials))
+
+    if not summaries:
         print("[!] no successful runs.")
         sys.exit(1)
 
-    path = emit_report(runs, args.outdir)
+    for s in summaries:
+        print(f"[=] {s['tier']}: fidelity {s['fidelity_mean']:.1f}/{s['expected']}"
+              f"  leakage {s['leaked_total']}  "
+              f"says-no cmd {s['says_no_cmd'][0]}/{s['says_no_cmd'][1]}, "
+              f"file {s['says_no_file'][0]}/{s['says_no_file'][1]}")
+
+    path = emit_report(summaries, args.outdir, args.trials)
     print(f"\n[+] Report written -> {os.path.abspath(path)}")
 
 

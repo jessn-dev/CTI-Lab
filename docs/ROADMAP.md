@@ -183,6 +183,45 @@ oversell it.
 - Keys on source IP: tier up from one address, visit shelLM from another, and you
   get the default box. Honest limitation, not a bug.
 
+**Phase C-2 follow-ups (2026-08-02, part 2).**
+- **Regex tightening.** The short recon/ingress tokens (`id`, `nc`, `ps`, `ss`)
+  are now anchored to command position (start of line, after `;`/`&`/`|`, or after
+  `sudo`). Unanchored, `\bid\b` matched any argument containing the word and
+  `\bnc\b` matched `update-alternatives --install /bin/nc` — the 100416 gate hid
+  that, but a real SSH session doing package work would still have scored.
+- **`bin/test_rules.sh`** — 18 canned log lines through `wazuh-logtest`, each
+  asserted to a specific rule: system execs stop at 100410, attacker commands
+  classify, short tokens stay unmatched inside arguments, the tripwire fires, and
+  the shelLM feed lands on 100311/100312/100315/100316. This is what keeps the
+  false-positive fix from silently regressing. (Gotcha: `wazuh-logtest` writes its
+  analysis to *stderr* — discard it and every test reports "no rule matched".)
+- **shelLM tiers (100320/100321).** The LLM honeypot now escalates on its own
+  evidence, with `<same_source_ip/>` (its events carry the session IP, unlike
+  snoopy's). It ships `persona.py` and mounts the tier volume read-write, so an
+  attacker who only ever touches the LLM shell still steers the persona. Verified
+  live: 3 recon → 100320, 2 beyond-recon → 100321, tier published from shelLM's
+  agent.
+- **`Tier_opportunist` consistency.** Scored 1/3 on `ls` agreement (read back a
+  written file but omitted it from listings). The prompt now scopes "nothing
+  interesting here" to what the box *started* with; re-measured at 3/3.
+
+**Phase C-2 follow-ups (2026-08-02).**
+- **The lab was tiering itself.** The honeypot's own housekeeping
+  (`update-rc.d dbus defaults`, `update-alternatives --install /bin/nc …`) scored
+  persistence + ingress and raised SKILLED with no attacker present — engage fired,
+  and `persona.py` logged "tier SKILLED with no srcip in the alert". New rule
+  **100416** gates every category rule on the command carrying an SSH client IP;
+  system execs now stop at the level-2 base rule. Matched on the raw snoopy line,
+  because `srcip` is a *static* Wazuh field and a `<field>` test on it refuses to
+  load ("Field 'srcip' is static"). Full chain re-verified after the change.
+- `persona_check.py` grew `--trials` (default 3) plus **says-no** probes: a
+  nonexistent binary and a nonexistent file must still error, since a persona that
+  keeps an attacker digging can stop saying "no". Three trials per tier on
+  llama3.2:3b: SKILLED 6/7 fidelity every trial, leakage 0, canary 3/3, says-no
+  3/3; OPPORTUNIST 3/3 fidelity, canary read-back 3/3 (`ls` agreement 1/3 — its
+  weak spot); upstream `Eman_v1` fails the canary 0/3 where both tier personas
+  pass. `Tier_skilled` shows no mirror of the OPPORTUNIST bleed.
+
 **Phase C-2 follow-ups (2026-08-01).**
 - `simulate_attacks.py` gained **Phase 8**: the skilled profile now ends by walking
   into shelLM, so the adapted persona is part of the automated demo (and skips

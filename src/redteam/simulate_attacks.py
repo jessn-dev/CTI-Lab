@@ -23,8 +23,10 @@ Requires paramiko (see requirements.txt). Target/creds overridable via env:
 """
 
 import argparse
+import json
 import os
 import socket
+import subprocess
 import time
 import sys
 
@@ -124,6 +126,45 @@ def read_until_idle(chan, idle=6.0, hard=90.0):
     return buf
 
 
+def first_output_line(out, cmd):
+    """First real line of a command's output.
+
+    shelLM echoes the command back and ends with a prompt line, so "the first
+    non-empty line" is not the answer - drop the echo and any prompt lines.
+    """
+    for ln in out.splitlines():
+        s = ln.strip()
+        if not s or s == cmd or s in ("assistant", "user"):
+            continue
+        if s.endswith(("$", "#")):          # a prompt line, not output
+            continue
+        return s
+    return "(no output)"
+
+
+def served_persona():
+    """Ask the honeypot which persona it served, instead of guessing.
+
+    run.sh logs tier + persona per session to the feed the Wazuh agent ships, so
+    the ground truth is one docker call away. Returns None when docker is not
+    usable from here.
+    """
+    try:
+        out = subprocess.run(
+            ["docker", "exec", os.environ.get("SHELLM_CONTAINER", "shellm"),
+             "sh", "-c", "grep session_start /var/log/shellm.json | tail -1"],
+            capture_output=True, text=True, timeout=15)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if out.returncode != 0 or not out.stdout.strip():
+        return None
+    try:
+        ev = json.loads(out.stdout.strip().splitlines()[-1])
+    except ValueError:
+        return None
+    return f"{ev.get('tier', '?')} -> {ev.get('persona', '?')}"
+
+
 def visit_llm_honeypot():
     """Phase 8: walk into shelLM and show the surface adapted to our tier.
 
@@ -166,17 +207,22 @@ def visit_llm_honeypot():
                         if ln.strip().endswith(("$", "#"))), "")
     if prompt_line:
         print(f"[*] Prompt: {prompt_line}")
-    # The SKILLED persona is a corporate jump host; the default/opportunist ones
-    # are a plain cloud VM. Reading the prompt is the cheapest tell.
-    hint = "SKILLED persona (corporate jump host)" if "corp" in banner.lower() \
-        else "default/low-value persona"
-    print(f"[*] Surface looks like: {hint}")
+
+    served = served_persona()
+    if served:
+        print(f"[*] Persona served: {served}   (from the honeypot's own SIEM feed)")
+    else:
+        # No docker here (remote host, or the CLI is absent): fall back to reading
+        # the surface. Guessing from wording is exactly as brittle as it sounds,
+        # which is why the log is preferred.
+        rich = any(m in banner.lower() for m in ("corp.local", "jump-01", "jump"))
+        print("[*] Persona (guessed from the banner): "
+              + ("SKILLED / corporate jump host" if rich else "default or low-value box"))
 
     for cmd in ("hostname", "ls -la /root", "cat /root/credentials.txt"):
         chan.send(cmd + "\n")
         out = read_until_idle(chan, idle=6.0, hard=120.0)
-        first = next((ln for ln in out.splitlines()[1:] if ln.strip()), "")
-        print(f"[*] $ {cmd}   -> {first.strip()[:90]}")
+        print(f"[*] $ {cmd}   -> {first_output_line(out, cmd)[:90]}")
 
     client.close()
     print("[+] Commands logged to the SIEM (rules 100314-100319); the persona "

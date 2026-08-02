@@ -216,7 +216,10 @@ The lab includes a custom **"CTI · Threat Overview"** dashboard: top
 attacker IPs, alert-level distribution, MITRE ATT&CK techniques, alerts over
 time, top rules, and a total-alert metric — plus two panels that put the **two
 LLM honeypots side by side** (beelzebub vs shelLM, over time and broken down by
-rule + source IP), the SIEM half of the B2 benchmark. Its saved objects live in
+rule), the SIEM half of the B2 benchmark. Note the two honeypots report the
+attacker's IP in different fields (`data.event.SourceIp` vs `data.srcip`), so the
+side-by-side table stays on rule counts and leaves IPs to the Top Attacker IPs
+panel. Its saved objects live in
 `services/wazuh-config/wazuh_dashboard/cti-dashboard.ndjson` and import automatically on
 startup (or run `./bin/import-dashboard.sh`).
 
@@ -358,6 +361,7 @@ src/                          # the code that runs inside the lab
   redteam/
     simulate_attacks.py       # paramiko red-team (Cyber Kill Chain)
     benchmark.py              # B2 Part 2: shelLM vs beelzebub consistency benchmark
+    persona_check.py          # C-2: scores shelLM's adaptive personas per tier
 services/                     # per-stack build + config assets
   wazuh-config/               # Wazuh config consumed by the SIEM stack
     wazuh_dashboard/cti-dashboard.ndjson  # custom dashboard (saved objects, as code)
@@ -639,14 +643,38 @@ logins — that's its whole point — so `run.sh` wipes that history (`--cleaned
 different machine. Each session logs its tier + persona, which the SIEM raises as
 `100312` (SKILLED served the rich box, level 10) or `100313` (OPPORTUNIST).
 
+### Does the surface actually change?
+
+`src/redteam/persona_check.py` measures it, the same way `benchmark.py` measures
+the honeypots against each other: it publishes each tier through the real
+Active-Response script, opens a session, and scores **fidelity** (expected persona
+markers seen), **leakage** (the *other* persona's markers bleeding in — should be
+0) and a **canary** write→read-back→listing probe, so a richer environment isn't
+bought by losing the session consistency shelLM exists for.
+
+```bash
+python3 src/redteam/persona_check.py            # all three tiers → reports/
+```
+
+A representative run (llama3.2:3b): SKILLED served `Tier_skilled` with
+`corp.local`/`jump-01` markers, OPPORTUNIST served `Tier_opportunist` (bare box,
+empty `/root`), leakage **0** both ways. Fidelity swings run to run on a 3B model
+(2/7 to 5/7 across runs) — the report prints what it saw rather than smoothing it.
+The check earned its keep immediately: the first run caught the OPPORTUNIST prompt
+answering `bash: echo: command not found`, because "nothing here is interesting"
+had bled into *command availability*. The persona now scopes absence to content
+only.
+
 ### Try it
 ```bash
-./bin/attack.sh --profile skilled   # full chain: recon → deep → SKILLED → engage → reads a lure → tripwire → ban
+./bin/attack.sh --profile skilled   # full chain: recon → deep → SKILLED → engage → reads a lure → tripwire →
+                                    # Phase 8: walks into shelLM and shows the adapted persona
 ./bin/attack.sh --profile noise     # scan + brute only: classified low, banned fast, no engagement
 
-# then, from the same host, walk into the LLM honeypot and see the surface adapt:
+# or step into the LLM honeypot by hand afterwards:
 ssh root@localhost -p 2224          # password: toor  → jump-01.corp.local, not the default box
 ```
+Phase 8 skips cleanly when the shelLM add-on isn't running.
 Watch the tiers and the tripwire in the dashboard (query `rule.groups:engagement`)
 or with `./bin/logs.sh json`.
 
@@ -659,7 +687,8 @@ or with `./bin/logs.sh json`.
 | `src/soar/engage.py` | Active Response: plant lures on SKILLED, hold the ban |
 | `src/soar/persona.py` | Active Response: publish the tier to the `tier-state` volume (C-2) |
 | `services/shelLM/personalities/` | `Tier_skilled` / `Tier_opportunist` personas |
-| `src/redteam/simulate_attacks.py --profile` | skilled vs noise demo |
+| `src/redteam/simulate_attacks.py --profile` | skilled vs noise demo; the skilled run ends in the LLM honeypot (Phase 8) |
+| `src/redteam/persona_check.py` | scores the personas per tier (fidelity / leakage / consistency) |
 
 > **Honest notes.** Tiering is heuristic (rule combos), not prediction. `engage`
 > has a 900 s per-IP dedup (it won't re-plant for the same attacker within the

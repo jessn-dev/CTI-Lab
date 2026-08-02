@@ -178,6 +178,23 @@ oversell it.
 - Keys on source IP: tier up from one address, visit shelLM from another, and you
   get the default box. Honest limitation, not a bug.
 
+**Phase C-2 follow-ups (2026-08-01).**
+- `simulate_attacks.py` gained **Phase 8**: the skilled profile now ends by walking
+  into shelLM, so the adapted persona is part of the automated demo (and skips
+  cleanly when the add-on is down). Verified: one run fires 5763 + 100411/100400/
+  100401/100402 + 100312 + 100314/100315/100316.
+- `src/redteam/persona_check.py` scores the personas per tier — fidelity, leakage,
+  and a consistency canary. Leakage 0 both ways; fidelity varies run to run on a
+  3B model. It immediately caught a real prompt bug: the OPPORTUNIST persona's
+  "nothing here is interesting" framing bled into command availability
+  (`bash: echo: command not found`), now scoped to content only.
+- Agent enrollment: authd's `force.disconnected_time` is now **disabled**. It
+  required a stale record to be marked disconnected first (~30-60 s of missed
+  keepalives), so rebuilding a honeypot image faster than that left the fresh
+  container unenrolled — alive, answering SSH, forwarding nothing. Both entrypoints
+  now retry enrollment 3× and print a loud NOT ENROLLED banner with the fix.
+  Verified by two back-to-back rebuilds: both enrolled on the first attempt.
+
 ## Benefits (why the whole direction is worth it)
 Realism & adaptability (beats fingerprinting), scalability (auto-generate many),
 lower operational overhead (less manual config), richer intelligence and fewer

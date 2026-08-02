@@ -12,9 +12,14 @@ Mapped to:
 - MITRE ATT&CK
 - The Diamond Model of Intrusion Analysis
 
+The `skilled` profile ends with Phase 8: the same attacker walks into the shelLM
+LLM honeypot, which serves a persona chosen from the tier the SIEM just assigned
+(Phase C-2). That add-on is optional, so Phase 8 skips when port 2224 is closed.
+
 Requires paramiko (see requirements.txt). Target/creds overridable via env:
   HONEYPOT_HOST (default 127.0.0.1)  HONEYPOT_PORT (default 2222)
   HONEYPOT_USER (default root)       HONEYPOT_PASS (default toor)
+  SHELLM_HOST   (default HONEYPOT_HOST)  SHELLM_PORT (default 2224)
 """
 
 import argparse
@@ -41,6 +46,11 @@ HOST = os.environ.get("HONEYPOT_HOST", "127.0.0.1")
 PORT = int(os.environ.get("HONEYPOT_PORT", "2222"))
 USER = os.environ.get("HONEYPOT_USER", "root")
 PASSWORD = os.environ.get("HONEYPOT_PASS", "toor")
+
+# shelLM, the LLM honeypot (Phase C-2 target: it adapts its persona to our tier).
+# Optional add-on, so Phase 8 skips cleanly when the port is closed.
+LLM_HOST = os.environ.get("SHELLM_HOST", HOST)
+LLM_PORT = int(os.environ.get("SHELLM_PORT", "2224"))
 
 # Wrong passwords used to generate real failed-auth events for Wazuh.
 WORDLIST = [
@@ -98,13 +108,89 @@ def ssh_exec(client, command):
     return (out + err).strip()
 
 
+def read_until_idle(chan, idle=6.0, hard=90.0):
+    """Drain an interactive channel until it goes quiet (the LLM answers slowly)."""
+    buf = ""
+    last = time.time()
+    start = last
+    while time.time() - start < hard:
+        if chan.recv_ready():
+            buf += chan.recv(65535).decode(errors="ignore")
+            last = time.time()
+        elif time.time() - last > idle:
+            break
+        else:
+            time.sleep(0.3)
+    return buf
+
+
+def visit_llm_honeypot():
+    """Phase 8: walk into shelLM and show the surface adapted to our tier.
+
+    By now the SIEM has tiered this source IP as SKILLED, and persona.py has
+    published that tier for the LLM honeypot (Phase C-2). shelLM should greet us
+    as a busy internal jump host instead of its default box - and every command
+    typed lands in the SIEM as rules 100314-100319.
+
+    The shelLM add-on is optional (its own compose file), so a closed port is a
+    skip, not a failure.
+    """
+    print_phase(8, "The Deception Adapts (Phase C-2)",
+                "T1497 (Virtualization/Sandbox Evasion - inverted)",
+                "Victim -> Adversary",
+                "Same attacker, second honeypot: the LLM shell picks a persona "
+                "from our tier.")
+
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(2)
+    open_port = s.connect_ex((LLM_HOST, LLM_PORT)) == 0
+    s.close()
+    if not open_port:
+        print(f"[*] shelLM not listening on {LLM_PORT} - add-on not running, skipping.")
+        print("    (start it with: docker compose -f compose/shellm.yml up -d)")
+        return
+
+    try:
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        client.connect(LLM_HOST, port=LLM_PORT, username=USER, password=PASSWORD,
+                       look_for_keys=False, allow_agent=False, timeout=20)
+        chan = client.invoke_shell(term="xterm", width=120, height=40)
+    except Exception as exc:
+        print(f"[!] Could not enter the LLM honeypot: {exc}")
+        return
+
+    print("[*] Logged into the LLM shell. Waiting for the greeting (local model)...")
+    banner = read_until_idle(chan, idle=6.0, hard=120.0)
+    prompt_line = next((ln.strip() for ln in reversed(banner.splitlines())
+                        if ln.strip().endswith(("$", "#"))), "")
+    if prompt_line:
+        print(f"[*] Prompt: {prompt_line}")
+    # The SKILLED persona is a corporate jump host; the default/opportunist ones
+    # are a plain cloud VM. Reading the prompt is the cheapest tell.
+    hint = "SKILLED persona (corporate jump host)" if "corp" in banner.lower() \
+        else "default/low-value persona"
+    print(f"[*] Surface looks like: {hint}")
+
+    for cmd in ("hostname", "ls -la /root", "cat /root/credentials.txt"):
+        chan.send(cmd + "\n")
+        out = read_until_idle(chan, idle=6.0, hard=120.0)
+        first = next((ln for ln in out.splitlines()[1:] if ln.strip()), "")
+        print(f"[*] $ {cmd}   -> {first.strip()[:90]}")
+
+    client.close()
+    print("[+] Commands logged to the SIEM (rules 100314-100319); the persona "
+          "choice itself alerted as 100312/100313.")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Adversary simulation against the honeypot")
     parser.add_argument(
         "--profile", choices=["skilled", "noise"], default="skilled",
         help="skilled = full kill chain (trips SKILLED tier -> engage -> reads a "
-             "lure to trip the tripwire); noise = scan + brute-force only (gets "
-             "banned fast, no engagement). Phase C adaptive-engagement demo.")
+             "lure to trip the tripwire -> visits the LLM honeypot to see the "
+             "persona adapt); noise = scan + brute-force only (gets banned fast, "
+             "no engagement). Phase C adaptive-engagement demo.")
     args = parser.parse_args()
 
     print("\n>> INITIATING ADVERSARY SIMULATION <<")
@@ -242,6 +328,9 @@ def main():
     print("[+] Decoy read. Tripwire (rule 100402) should now fire + disengage.")
 
     session.close()
+
+    # -- PHASE 8: The LLM honeypot adapts (Phase C-2) ----------------------
+    visit_llm_honeypot()
     print("\n=========================================================")
     print("ADVERSARY SIMULATION COMPLETE")
     print("Open the Wazuh dashboard to review the detected Kill Chain,")

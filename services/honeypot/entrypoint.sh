@@ -35,10 +35,25 @@ for i in $(seq 1 60); do
 done
 
 # Enroll (idempotent: skips if client.keys already present) and start agent.
+# Retry: on a rebuild the manager may still hold this name, and a container that
+# starts unenrolled looks healthy while forwarding NOTHING - an attack run then
+# produces zero alerts with no obvious cause. Fail loudly instead.
 if [ ! -s /var/ossec/etc/client.keys ]; then
-    echo "[honeypot] enrolling agent with ${MANAGER}..."
-    /var/ossec/bin/agent-auth -m "${MANAGER}" || \
-        echo "[honeypot] WARN: enrollment failed, agent will retry via auto-enrollment."
+    for attempt in 1 2 3; do
+        echo "[honeypot] enrolling agent with ${MANAGER} (attempt ${attempt}/3)..."
+        /var/ossec/bin/agent-auth -m "${MANAGER}" && break
+        sleep 10
+    done
+fi
+
+if [ ! -s /var/ossec/etc/client.keys ]; then
+    echo "[honeypot] ================================================================"
+    echo "[honeypot] ERROR: NOT ENROLLED - this container will forward no events."
+    echo "[honeypot] Usually a stale record with the same name on the manager."
+    echo "[honeypot]   docker exec wazuh.manager /var/ossec/bin/agent_control -l"
+    echo "[honeypot]   docker exec wazuh.manager /var/ossec/bin/manage_agents -r <id>"
+    echo "[honeypot] then restart this container."
+    echo "[honeypot] ================================================================"
 fi
 
 echo "[honeypot] starting Wazuh agent..."

@@ -79,6 +79,12 @@ COPY services/shelLM/personalities/ \
 # honeypot; created here so a standalone run (no volume) still has a readable path.
 RUN mkdir -p /var/lib/tier-state
 
+# Phase C-2: shelLM raises its own attacker tiers (100320/100321) from its
+# per-command feed, so it runs the same Active-Response script as the static
+# honeypot and writes to the same shared volume.
+COPY --chmod=0750 src/soar/persona.py /var/ossec/active-response/bin/persona.py
+RUN chown root:wazuh /var/ossec/active-response/bin/persona.py
+
 # Tell the agent to read auth.log (sshd) + shelLM's session log.
 COPY services/shelLM/agent-shellm.conf /tmp/agent-shellm.conf
 RUN cat /tmp/agent-shellm.conf >> /var/ossec/etc/ossec.conf && rm /tmp/agent-shellm.conf

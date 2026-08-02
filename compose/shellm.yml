@@ -28,9 +28,10 @@ services:
       - SHELLM_PERSONALITY=Eman_v1      # default persona (untiered attacker)
       - SHELLM_TIER_TTL=3600            # ignore a tier older than this (seconds)
     volumes:
-      # Phase C-2: read-only view of the tier state src/soar/persona.py writes on
-      # the static honeypot. run.sh maps the tier to a persona per session.
-      - tier-state:/var/lib/tier-state:ro
+      # Phase C-2: tier state. Read by run.sh to pick a persona; also WRITTEN
+      # here, since shelLM raises its own tiers (100320/100321) and runs
+      # persona.py on its own agent.
+      - tier-state:/var/lib/tier-state
     extra_hosts:
       - "host.docker.internal:host-gateway"
 

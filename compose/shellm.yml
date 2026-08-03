@@ -34,8 +34,11 @@ services:
       # here, since shelLM raises its own tiers (100320/100321) and runs
       # persona.py on its own agent.
       - tier-state:/var/lib/tier-state
+      # Shared blocklist: a tripwire ban is lab-wide, and this survives restarts.
+      - defense-state:/var/lib/defense-state
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
 volumes:
   tier-state:
+  defense-state:

@@ -28,6 +28,21 @@ iptables -C INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/nu
     || iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null \
     || echo "[shellm] WARN: could not set conntrack accept rule (no NET_ADMIN?)."
 
+# Re-apply the shared blocklist (src/soar/active_defense.py writes it). A ban is
+# lab-wide and outlives a container recreate; without this, rebuilding a honeypot
+# quietly re-opens it to an attacker the lab already cut off.
+BAN_DIR=/var/lib/defense-state
+if [ -d "$BAN_DIR" ]; then
+    for ip in $(ls "$BAN_DIR" 2>/dev/null); do
+        case "$ip" in
+            *[!0-9.:aAbBcCdDeEfF]*) continue ;;   # ignore anything that is not an IP
+        esac
+        iptables -C INPUT -s "$ip" -j DROP 2>/dev/null \
+            || iptables -A INPUT -s "$ip" -j DROP 2>/dev/null \
+            && echo "[shellm] re-applied ban on $ip"
+    done
+fi
+
 echo "[shellm] starting rsyslog (populates /var/log/auth.log)..."
 rsyslogd
 

@@ -30,6 +30,8 @@ services:
       # tier here; the shelLM container reads it to pick its persona. Shared by
       # name because both files pin the same compose project.
       - tier-state:/var/lib/tier-state
+      # Shared blocklist: a tripwire ban is lab-wide, and this survives restarts.
+      - defense-state:/var/lib/defense-state
     # No depends_on: the entrypoint already waits for wazuh.manager:1515 before
     # enrolling, so this file runs standalone. Startup order is sequenced by
     # start_lab.sh (SIEM first). depends_on would break a standalone run since
@@ -37,3 +39,4 @@ services:
 
 volumes:
   tier-state:
+  defense-state:

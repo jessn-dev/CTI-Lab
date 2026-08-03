@@ -7,6 +7,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl ca-certificates gnupg lsb-release \
+        iptables \
     && curl -s https://packages.wazuh.com/key/GPG-KEY-WAZUH | \
         gpg --no-default-keyring --keyring gnupg-ring:/usr/share/keyrings/wazuh.gpg --import \
     && chmod 644 /usr/share/keyrings/wazuh.gpg \
@@ -17,8 +18,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Tell the agent to read beelzebub's JSON log (mounted at /logs).
-COPY beelzebub-localfile.conf /tmp/bz.conf
+COPY services/beelzebub/agent/beelzebub-localfile.conf /tmp/bz.conf
 RUN cat /tmp/bz.conf >> /var/ossec/etc/ossec.conf && rm /tmp/bz.conf
 
-COPY --chmod=0755 entrypoint.sh /entrypoint.sh
+# beelzebub ships as a scratch image: no shell, so it cannot host an Active
+# Response script or run iptables itself. This sidecar shares beelzebub's network
+# namespace (see compose/beelzebub.yml), so a ban applied here covers beelzebub's
+# traffic - which is what makes the lab-wide tripwire ban true for all three
+# honeypots instead of two.
+COPY --chmod=0750 src/soar/active_defense.py /var/ossec/active-response/bin/active_defense.py
+RUN chown root:wazuh /var/ossec/active-response/bin/active_defense.py
+
+COPY --chmod=0755 services/beelzebub/agent/entrypoint.sh /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

@@ -28,17 +28,30 @@ services:
   # manager. Shares the SIEM's network (same pinned project name).
   beelzebub-agent:
     build:
-      context: ../services/beelzebub/agent
+      # Repo root, like the other services, so the image can COPY src/soar/.
+      context: ..
+      dockerfile: services/beelzebub/agent/Dockerfile
     image: threat-lab/beelzebub-agent:latest
     container_name: beelzebub-agent
-    hostname: beelzebub-agent
+    # No hostname: it conflicts with network_mode: service:* (the netns, and so
+    # the hostname, belong to beelzebub). The agent still registers as
+    # "beelzebub-agent" - WAZUH_MANAGER enrollment uses the container name.
     restart: unless-stopped
     environment:
       - WAZUH_MANAGER=wazuh.manager
+    # Share beelzebub's network namespace so an iptables ban applied in this
+    # sidecar actually filters beelzebub's traffic (the honeypot itself is a
+    # scratch image with no shell). Side effect: if beelzebub is recreated, this
+    # container must be restarted too - its netns went with it.
+    network_mode: "service:beelzebub"
+    cap_add:
+      - NET_ADMIN
     volumes:
       - beelzebub-logs:/logs          # read beelzebub's event log
+      - defense-state:/var/lib/defense-state   # shared blocklist (lab-wide bans)
     depends_on:
       - beelzebub
 
 volumes:
   beelzebub-logs:
+  defense-state:

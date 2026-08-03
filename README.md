@@ -630,14 +630,27 @@ commands (snoopy) ─▶ has an SSH client? ─▶ category rules ─▶ correla
 5. **Engage.** SKILLED fires `engage.py` (a second Active-Response script): it
    plants decoy lures (`~/.ssh/id_rsa`, `backup_db.sql`, `credentials.txt` — all
    fake) and **does not ban**, keeping the attacker engaged.
-6. **Tripwire + disengage.** Reading a lure trips `100402` (level 13, the loudest
-   signal in the lab), which drives `active_defense` to **ban the srcip** — the
-   attacker took the bait, so we cut them off. The LLM honeypot has the same
-   terminal state: its SKILLED persona's environment contains the same bait, so
-   reading it raises `100322` and bans on the shelLM agent (which ships
-   `active_defense.py` and holds `NET_ADMIN`). Without it an engaged attacker on
-   the LLM side would be held forever — engagement with no exit is just a stuck
-   honeypot.
+6. **Tripwire + disengage, lab-wide.** Reading a lure trips `100402` (static box)
+   or `100322` (LLM shell) — level 13, the loudest signal here — and
+   `active_defense` **bans the srcip on every honeypot**, not just the one that
+   was tripped. Taking planted bait is a fact about the attacker; a ban that
+   covers only the box they happened to trip leaves the other two open to the same
+   source. Brute-force noise still bans locally (`5710/5712/5720/5763`), because a
+   password spray against one honeypot says nothing about the others.
+
+   Mechanically: the tripwire rules use `<location>all</location>`, and every
+   honeypot can enforce. The static box and shelLM run `active_defense.py`
+   directly. beelzebub ships as a *scratch* image with no shell, so its sidecar
+   agent shares beelzebub's network namespace (`network_mode: service:beelzebub`)
+   — an `iptables` rule applied in the sidecar filters beelzebub's traffic.
+   Bans are also written to a shared `defense-state` volume and re-applied by each
+   entrypoint at boot, so a container recreate doesn't quietly re-open the lab to
+   someone it already cut off.
+
+   > **Demo note.** After a `--profile skilled` run your own IP is banned on all
+   > three honeypots for 600 s (the AR timeout), so an immediate second run can't
+   > connect. That is the feature working. Wait it out, or clear it with
+   > `docker exec linux-honeypot iptables -D INPUT -s <ip> -j DROP` on each.
 
 ### Adaptive LLM surface (Phase C-2)
 
@@ -734,6 +747,7 @@ or with `./bin/logs.sh json`.
 | `src/redteam/persona_check.py` | scores the personas per tier (fidelity / leakage / consistency / says-no) |
 | `bin/test_rules.sh` | rule regression test: 20 canned log lines, asserted rule by rule |
 | `bin/test_correlation.sh` | tier regression test: injects events, asserts the correlation rules fired |
+| `services/beelzebub/agent/` | sidecar agent — shares beelzebub's netns so lab-wide bans reach it |
 
 > **Honest notes.** Tiering is heuristic (rule combos), not prediction. `engage`
 > has a 900 s per-IP dedup (it won't re-plant for the same attacker within the

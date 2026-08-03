@@ -183,6 +183,27 @@ oversell it.
 - Keys on source IP: tier up from one address, visit shelLM from another, and you
   get the default box. Honest limitation, not a bug.
 
+**Lab-wide disengagement (2026-08-03).** A tripwire ban now covers every honeypot,
+not just the one that was tripped.
+- The tripwire rules (100402 static, 100322 LLM) moved to
+  `<location>all</location>`; brute-force noise stays `local`.
+- `active_defense.py` also records bans in a shared `defense-state` volume, and
+  each entrypoint replays the list at boot — a rebuilt container no longer
+  re-opens the lab to an attacker it had already cut off.
+- **beelzebub** could not enforce anything: scratch image, no shell, and its
+  sidecar agent sat in a separate network namespace. The sidecar now shares
+  beelzebub's netns (`network_mode: service:beelzebub`) with `NET_ADMIN` and ships
+  `active_defense.py`, so a rule applied there filters beelzebub's traffic.
+  Verified: the sidecar sees beelzebub's listeners (`08AE` = 2222, `0840` = 2112).
+- Two things that bit on the way: sharing a netns forbids `hostname:` in compose
+  *and* makes the agent enroll under beelzebub's container id, so enrollment now
+  passes `-A beelzebub-agent`; and the sidecar's PID 1 is `tail`, so when the
+  manager pushed the new AR config the agent restarted itself, died, and kept
+  looking healthy — it now runs a watchdog.
+- Verified live: one `attack.sh --profile skilled` run ends with the attacker's IP
+  dropped on all three honeypots. Note the demo cost — your own IP is banned for
+  600s afterwards.
+
 **Phase C-2 follow-ups (2026-08-02, part 3).**
 - **One tier vocabulary.** Both honeypots now tag `hp_recon` / `deep_attack` and
   feed the same 100400/100401 pair (the per-honeypot 100320/100321 are gone). The

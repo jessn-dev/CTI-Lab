@@ -23,6 +23,9 @@ MITRE D3FEND: D3-NTF (Network Traffic Filtering).
 
 import sys
 import json
+import os
+import re
+import time
 import datetime
 import subprocess
 
@@ -30,6 +33,18 @@ import subprocess
 LOG_FILE = "/var/ossec/logs/active-responses.log"
 # Absolute path — execd runs us with a minimal PATH (see module docstring).
 IPTABLES = "/usr/sbin/iptables"
+
+# Shared blocklist (docker volume "defense-state"), mounted in every honeypot.
+# A ban is a decision about an ATTACKER, not about one container: the tripwire
+# fires on whichever honeypot the attacker took the bait on, and Wazuh's
+# <location>all</location> pushes the ban to every agent that is up. This file is
+# the other half - a honeypot that starts (or restarts) later replays the list at
+# boot, so disengagement survives a container recreate.
+BAN_DIR = "/var/lib/defense-state"
+
+# The IP becomes a filename and comes from a decoded log line, so it is
+# attacker-influenced: accept only plain IPv4/IPv6 characters.
+IP_RE = re.compile(r"^[0-9a-fA-F.:]{3,45}$")
 
 
 def log(message):
@@ -56,6 +71,40 @@ def run(cmd):
         return 1, str(exc)
 
 
+def _ban_record(ip):
+    """Path of the shared blocklist entry, or None if the IP looks unsafe."""
+    if not ip or not IP_RE.match(ip) or os.path.sep in ip:
+        return None
+    return os.path.join(BAN_DIR, ip)
+
+
+def record_ban(ip):
+    """Add the IP to the shared blocklist (best effort - never fatal)."""
+    path = _ban_record(ip)
+    if not path:
+        log(f"refusing to record suspicious srcip {ip!r}")
+        return
+    try:
+        os.makedirs(BAN_DIR, exist_ok=True)
+        with open(path, "w") as f:
+            f.write(f"{int(time.time())}\n")
+    except OSError as exc:
+        log(f"could not record ban for {ip}: {exc}")
+
+
+def forget_ban(ip):
+    """Drop the IP from the shared blocklist when the ban expires."""
+    path = _ban_record(ip)
+    if not path:
+        return
+    try:
+        os.remove(path)
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        log(f"could not clear ban record for {ip}: {exc}")
+
+
 def _rule_exists(ip):
     rc, _ = run([IPTABLES, "-C", "INPUT", "-s", ip, "-j", "DROP"])
     return rc == 0
@@ -74,6 +123,7 @@ def ban_ip(ip):
         log(f"IP {ip} already banned, skipping")
         return
     rc, out = run([IPTABLES, "-A", "INPUT", "-s", ip, "-j", "DROP"])
+    record_ban(ip)
     if rc == 0:
         log(f"BANNED malicious IP -> {ip} (iptables DROP)")
     else:
@@ -84,6 +134,7 @@ def ban_ip(ip):
 def unban_ip(ip):
     """Remove the ban when the Wazuh timeout expires."""
     rc, out = run([IPTABLES, "-D", "INPUT", "-s", ip, "-j", "DROP"])
+    forget_ban(ip)
     if rc == 0:
         log(f"UNBANNED {ip} (timeout expired)")
     else:
